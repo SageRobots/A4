@@ -1,32 +1,38 @@
+#include stepper.h
+
+//declare variables for pins used
 const int pinEnc0A = 21;
 const int pinEnc1A = 20;
 const int pinEnc2A = 19;
 const int pinEnc3A = 18;
 
-const int pinEnc0B = 32;
-const int pinEnc1B = 31;
-const int pinEnc2B = 30;
-const int pinEnc3B = 38;
+const int pinEnc0B = 13;
+const int pinEnc1B = 17;
+const int pinEnc2B = A14;
+const int pinEnc3B = 25;
 
-const int pinEnable = 33;
+const int pinEnable0 = A8;
+const int pinEnable1 = A1;
+const int pinEnable2 = A10;
+const int pinEnable3 = 49;
 
 const int pinDir0 = 53;
 const int pinDir1 = 52;
 const int pinDir2 = 51;
 const int pinDir3 = 50;
 
-const int pinHome0 = 22;
-const int pinHome1 = 23;
+const int pinHome0 = A0;
+const int pinHome1 = 4;
 const int pinHome2 = 24;
-const int pinHome3 = 25;
+const int pinHome3 = 29;
 
 const int pinStep0 = 37;
 const int pinStep1 = 36;
 const int pinStep2 = 35;
 const int pinStep3 = 34;
 
-const int pinGripDir = 27;
-const int pinGripPow = 10;
+const int pinGripDir = 10;
+const int pinGripPow = 11;
 
 unsigned long timeNow, timeGrip, timeWait;
 unsigned long timePrint, timePrevSpeed;
@@ -34,8 +40,8 @@ volatile uint32_t tooFast = 0;
 bool timeWaitSet;
 
 volatile int32_t currentPulses[4] = {0,0,0,0};
-const float gearRatio[4] = {26+103.0/121, 26+103.0/121, (26+103.0/121)*20/15, 26+103.0/121};
-const float pulsesPerDeg[4] = {1000.0/360,1000.0/360,1000.0/360,300.0/360}; //2.778
+const float gearRatio[4] = {26+103.0/121, 26+103.0/121, 26+103.0/121, 26+103.0/121};
+const float pulsesPerDeg[4] = {1000.0/360,1000.0/360,1000.0/360,300.0/360}; //gear box input degrees
 volatile int32_t targetPulses[4] = {0,0,0,0};
 volatile bool inPosition[4] = {false, false, false, false};
 volatile uint8_t busy = 0;
@@ -51,22 +57,30 @@ float accel = 30;
 uint32_t accelSteps;
 float x, t;
 uint32_t iTemp;
-uint8_t motionType = 0;
 volatile int32_t axisToHome = 9;
 int32_t gripperState = 0;
 int32_t gripperPow = 0;
 int32_t wait = 0;
 
+enum motionType {
+  noMove,
+  accelMove,
+  holdMove,
+  decelMove
+};
+
+motionType motionType;
+
 struct command {
-  uint8_t moveAxis[4];
+  bool moveAxis[4];
   int32_t targetPulses[4];
   int32_t axisToHome = 9;
   int32_t gripperState;
   int32_t gripperPow;
-  uint8_t set = 0;
-  uint8_t complete = 0;
+  bool set = 0;
+  bool complete = 0;
   int32_t wait = 0;
-  uint8_t waitComplete = 0;
+  bool waitComplete = 0;
 };
 command commandBuffer[10];
 uint8_t head = 1, tail = 0, nextHead = 2, nextTail = 1;
@@ -87,8 +101,10 @@ uint8_t head = 1, tail = 0, nextHead = 2, nextTail = 1;
 #define STEP_MASK ((1<<STEP_BIT_0)|(1<<STEP_BIT_1)|(1<<STEP_BIT_2)|(1<<STEP_BIT_3))
 
 void setup() {
+  //set first tail complete to indicate it is ready to be overwritten
   commandBuffer[tail].complete = 1;
   commandBuffer[tail].waitComplete = 1;
+
   //stepper setup
   //configure timer 1 as stepper driver input, CTC, no prescaler
   TCCR1A = 0;
@@ -97,71 +113,40 @@ void setup() {
   //configure timer 3 as stepper port reset
   TCCR3A = 0;
   TCCR3B |= (1<<WGM32)|(1<<CS30);
-  TIMSK3 = 0; 
-  //enable stepper
-  pinMode(pinEnable, OUTPUT);
+  TIMSK3 = 0;
+
+  stepperSetup(pinEnable0, pinStep0, pinDir0, pinEnc0A, pinEnc0B, pinHome0);
+  stepperSetup(pinEnable1, pinStep1, pinDir1, pinEnc1A, pinEnc1B, pinHome1);
+  stepperSetup(pinEnable2, pinStep2, pinDir2, pinEnc2A, pinEnc2B, pinHome2);
+  stepperSetup(pinEnable3, pinStep3, pinDir3, pinEnc3A, pinEnc3B, pinHome3);
   
-  pinMode(pinStep0, OUTPUT);
-  pinMode(pinStep1, OUTPUT);
-  pinMode(pinStep2, OUTPUT);
-  pinMode(pinStep3, OUTPUT);
-  
-  pinMode(pinDir0, OUTPUT);
-  pinMode(pinDir1, OUTPUT);
-  pinMode(pinDir2, OUTPUT);
-  pinMode(pinDir3, OUTPUT);
-  
-  //encoder J0 setup
-  pinMode(pinEnc0A, INPUT);
-  pinMode(pinEnc0B, INPUT);
+  //attach interrupts to encoder A channels
   attachInterrupt(digitalPinToInterrupt(pinEnc0A), encoder0, RISING);
-  pinMode(pinHome0, INPUT_PULLUP);
-
-  //encoder J1 setup
-  pinMode(pinEnc1A, INPUT);
-  pinMode(pinEnc1B, INPUT);
   attachInterrupt(digitalPinToInterrupt(pinEnc1A), encoder1, RISING);
-  pinMode(pinHome1, INPUT);
-
-  //encoder J2 setup
-  pinMode(pinEnc2A, INPUT);
-  pinMode(pinEnc2B, INPUT);
   attachInterrupt(digitalPinToInterrupt(pinEnc2A), encoder2, RISING);
-  pinMode(pinHome2, INPUT);
-
-  //encoder J3 setup
-  pinMode(pinEnc3A, INPUT);
-  pinMode(pinEnc3B, INPUT);
   attachInterrupt(digitalPinToInterrupt(pinEnc3A), encoder3, RISING);
-  pinMode(pinHome3, INPUT);
 
-  //gripper
+  //gripper setup
   pinMode(pinGripDir, OUTPUT);
   pinMode(pinGripPow, OUTPUT);
 
   //serial setup
   Serial.begin(115200);
   while (!Serial);
-  Serial.println("Started");  
+  Serial.println("Started");
 }
 
 void loop() {
   //read serial input
   byte c;
-  char line[80], lineRaw[80];
-  uint8_t i,j;
+  char line[80];
+  uint8_t i;
   
   while (Serial.available()) {
     c = Serial.read();
-    lineRaw[j] = c;
-    j++;
       //set termination character if end of line
       if (c=='\n'||c=='\r') {
         line[i]='\0';
-        lineRaw[j] = '\0';
-        Serial.print("line raw: ");
-        Serial.println(lineRaw);
-        memset(lineRaw,0,sizeof(lineRaw));
         parseLine(line);
         head = nextHead;
         if (nextHead == 9) {
@@ -170,7 +155,6 @@ void loop() {
           nextHead++;
         }
         i=0;
-        j=0;
       } else {
         if (c<=' ') {
           //remove white space and control characters
@@ -182,15 +166,17 @@ void loop() {
         }
       }
   }
+
   //check if wait time is complete
   if(timeNow-timeWait >= commandBuffer[tail].wait) {
     commandBuffer[tail].waitComplete = 1;
   }
+
   //execute command if tail is complete and nextTail is set
   if(commandBuffer[nextTail].set && commandBuffer[tail].complete && commandBuffer[tail].waitComplete) {
-    commandBuffer[tail].complete = 0;
-    commandBuffer[tail].waitComplete = 0;
-    commandBuffer[tail].set = 0;
+    commandBuffer[tail].complete = false;
+    commandBuffer[tail].waitComplete = false;
+    commandBuffer[tail].set = false;
     tail = nextTail;
     if(nextTail == 9) {
       nextTail = 0;
@@ -201,25 +187,27 @@ void loop() {
   }
 
   timeNow = millis();
+
   //run the gripper
   gripper();
+
   //alter the speed
-  if ((motionType > 0) && (timeNow - timePrevSpeed >= 100)) {
+  if ((motionType > noMove) && (timeNow - timePrevSpeed >= 100)) {
     //accelerate or hold at least halfway, then until stepsToTarget <= accelSteps
-    if (motionType == 1) { //accelerate
+    if (motionType == accelMove) { //accelerate
       speedNow += (timeNow-timePrevSpeed)/1000.0*accel;
       if (speedNow > speedMax) {
         speedNow = speedMax;
         accelSteps = abs(stepsToTarget[master] - stepsNeeded[master]);
-        motionType = 2;
+        motionType = holdMove;
       }
       if (fractionRemaining[master] <= 0.5) {
         accelSteps = abs(stepsToTarget[master] - stepsNeeded[master]);
-        motionType = 2;
+        motionType = holdMove;
       }
-    } else if (motionType == 2) {
-      if (abs(stepsToTarget[master]) <= accelSteps) motionType = 3;
-    } else if (motionType == 3) {
+    } else if (motionType == holdMove) {
+      if (abs(stepsToTarget[master]) <= accelSteps) motionType = decelMove;
+    } else if (motionType == decelMove) {
         speedNow -= (timeNow-timePrevSpeed)/1000.0*accel;
         if (speedNow < speedMin) speedNow = speedMin;
     }
