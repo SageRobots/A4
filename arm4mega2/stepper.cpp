@@ -43,7 +43,10 @@ void stepper::encoder() {
 }
 
 int stepper::computeStepsToTarget() {
-  stepsToTarget = (targetPulses - currentPulses) * stepsPerPulse;
+  stepsToTarget = round((targetPulses - currentPulses) * stepsPerPulse);
+  if(stepsToTarget == 0) {
+    inPosition = true;
+  }
   return stepsToTarget;
 }
 

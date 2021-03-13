@@ -1,5 +1,5 @@
-
 #include "stepper.h"
+#include "communication.h"
 
 //define variables for pins
 const int pinGripDir = 10;
@@ -7,16 +7,11 @@ const int pinGripPow = 11;
 
 unsigned long timeNow, timeGrip, timeWait;
 unsigned long timePrint, timePrevSpeed;
-volatile uint32_t tooFast = 0;
 bool timeWaitSet;
 
 volatile uint8_t busy = 0;
 uint8_t master, slave1, slave2, slave3, masterStepBit, slave1StepBit, slave2StepBit, slave3StepBit;
 volatile uint8_t dirBits, stepBits;
-float speedMax = 90;
-float speedMin = 20;
-float speedNow;
-float accel = 30;
 uint32_t accelSteps;
 float x, t;
 uint32_t iTemp;
@@ -32,24 +27,13 @@ enum motionType {
   decelMove
 };
 
-motionType motionType;
-
-struct command {
-  bool moveAxis[4];
-  int32_t targetPulses[4];
-  int32_t axisToHome;
-  int32_t gripperState;
-  int32_t gripperPow;
-  bool set;
-  bool complete;
-  int32_t wait;
-  bool waitComplete;
-};
-command commandBuffer[10];
-uint8_t head, tail, nextHead, nextTail;
-
 //create array of stepper class
 stepper steppers[4];
+
+//create com object
+com com(steppers);
+
+motionType motionType;
 
 //ports and bits for writing direction and step ports in 1 command
 #define DIR_PORT PORTB
@@ -61,7 +45,6 @@ const uint8_t stepBit[4] = {1<<0, 1<<1, 1<<2, 1<<3};
 const uint8_t stepMask = stepBit[0] | stepBit[1] | stepBit[2] | stepBit[3];
 
 void setup() {
-  initializeBuffer();
   //stepper objects (int enable, int step, int dir, int encA, int encB, int home, int pulsesPerRev, int stepsPerRev)
   steppers[0] = stepper(A8, 37, 53, 21, 13, A0, 1000, 200, 26+103.0/121.0);
   steppers[1] = stepper(A1, 36, 52, 20, 17, 4, 1000, 200, 26+103.0/121.0);
@@ -95,56 +78,11 @@ void setup() {
 }
 
 void loop() {
-  //read serial input
-  byte c;
-  char line[80];
-  uint8_t i;
-  
-  while (Serial.available()) {
-    c = Serial.read();
-      //set termination character if end of line
-      if (c=='\n'||c=='\r') {
-        line[i]='\0';
-        parseLine(line);
-        head = nextHead;
-        if (nextHead == 9) {
-          nextHead = 0;
-        } else {
-          nextHead++;
-        }
-        i=0;
-      } else {
-        if (c<=' ') {
-          //remove white space and control characters
-        } else if(c >= 'a' && c <= 'z') {
-          //make all uppercase
-          line[i++] = c-'a'+'A';
-        } else {
-          line[i++] = c;
-        }
-      }
-  }
-
-  //check if wait time is complete
-  if(timeNow-timeWait >= commandBuffer[tail].wait) {
-    commandBuffer[tail].waitComplete = 1;
-  }
-
-  //execute command if tail is complete and nextTail is set
-  if(commandBuffer[nextTail].set && commandBuffer[tail].complete && commandBuffer[tail].waitComplete) {
-    commandBuffer[tail].complete = false;
-    commandBuffer[tail].waitComplete = false;
-    commandBuffer[tail].set = false;
-    tail = nextTail;
-    if(nextTail == 9) {
-      nextTail = 0;
-    } else {
-      nextTail++;
-    }
-    executeCommand();
-  }
+  com.readSerial();
 
   timeNow = millis();
+
+  com.updateBuffer();
 
   //run the gripper
   gripper();
@@ -175,24 +113,7 @@ void loop() {
   
   //periodically print the position
   if (timeNow - timePrint >= 2000) {
-    if(head != tail) {
-      Serial.print("\nReady");
-    }
-    Serial.print("\nPos: ");
-    for(int i=0; i<4; i++) {
-      Serial.print(steppers[i].computePosition());
-      Serial.print(", ");
-    }
-    Serial.print("\nTarget: ");
-    for(int i=0; i<4; i++) {
-      Serial.print(steppers[i].computeTarget());
-      Serial.print(", ");
-    }
-    if (tooFast > 0) {
-      Serial.print("\nToo fast: ");
-      Serial.print(tooFast);
-      tooFast = 0;
-    }
+    printStatus(steppers);
     timePrint = timeNow;
   }
 }
@@ -213,100 +134,13 @@ void encoder3() {
   steppers[3].encoder();
 }
 
-void parseLine(char *line) {
-
-  uint8_t i,j;
-  char cmd[4];
-  cmd[3] = '\0';
-  char number[10];
-  double fValue;
-  uint8_t c;
-  i=0;
-  //initialize commandBuffer
-  commandBuffer[head].gripperState = 0;
-  commandBuffer[head].axisToHome = 9;
-  commandBuffer[head].moveAxis[0] = 0;
-  commandBuffer[head].moveAxis[1] = 0;
-  commandBuffer[head].moveAxis[2] = 0;
-  commandBuffer[head].moveAxis[3] = 0;
-  commandBuffer[head].wait = 0;
-
-  while (line[i] != '\0') {
-
-    //the command type is 3 characters
-    cmd[0] = line[i];
-    cmd[1] = line[++i];
-    cmd[2] = line[++i];
-    
-    //the command value is all numbers and decimal that follow
-    c = line[++i];
-    j = 0;
-    for(j=0;j<=9;j++) {
-      if(((c <= '9') && (c >= '0')) || (c == '.') || (c== '-')) {
-        number[j] = c;
-        c = line[++i];
-      } else {
-        number[j] = '\0';
-      }
-    }
-    fValue = atof(number);
-    //interpret parsed command
-    if (strcmp(cmd,"M0A") == 0) {
-      //absolute move of J0
-      commandBuffer[head].targetPulses[0] = round(fValue*steppers[0].pulsesPerDegOut);
-      commandBuffer[head].moveAxis[0] = 1;
-    } else if (strcmp(cmd,"M1A") == 0) {
-      //absolute move of J1
-      commandBuffer[head].targetPulses[1] = round(fValue*steppers[1].pulsesPerDegOut);
-      commandBuffer[head].moveAxis[1] = 1;
-    } else if (strcmp(cmd,"M2A") == 0) {
-      //absolute move of J2
-      commandBuffer[head].targetPulses[2] = round(fValue*steppers[2].pulsesPerDegOut);
-      commandBuffer[head].moveAxis[2] = 1;
-    } else if (strcmp(cmd,"M3A") == 0) {
-      //absolute move of J3
-      commandBuffer[head].targetPulses[3] = round(fValue*steppers[3].pulsesPerDegOut);
-      commandBuffer[head].moveAxis[3] = 1;
-    } else if (strcmp(cmd,"SPD") == 0) {
-      speedMax = fValue;
-    } else if (strcmp(cmd,"ACC") == 0) {
-      accel = fValue;
-    } else if (strcmp(cmd,"HOM") == 0) {
-      commandBuffer[head].axisToHome = fValue;
-    } else if (strcmp(cmd,"ENA") == 0) {
-      steppers[round(fValue)].enable();
-    } else if (strcmp(cmd,"DIS") == 0) {
-      steppers[round(fValue)].disable();
-    } else if (strcmp(cmd,"STO") == 0) {
-      for(int i=0; i<4; i++) {
-        steppers[i].currentPulses = steppers[i].targetPulses;
-      }
-      initializeBuffer();
-    } else if (strcmp(cmd,"GRP") == 0) {
-      if (fValue > 0) {
-        commandBuffer[head].gripperState = 1;
-        commandBuffer[head].gripperPow = fValue;
-      } else {
-        commandBuffer[head].gripperState = -1;
-        commandBuffer[head].gripperPow = -1*fValue;
-      }
-    } else if (strcmp(cmd,"DEL") == 0) {
-      commandBuffer[head].wait = fValue;
-    } else {
-      Serial.print("Unknown command: ");
-      Serial.println(cmd);
-    }
-  }
-  commandBuffer[head].set = 1;
-}
-
 void executeCommand() {
   //copy data out of buffer
   timeWait = timeNow;
-  axisToHome = commandBuffer[tail].axisToHome;
+  axisToHome = com.commandBuffer[tail].axisToHome;
   for(int i=0; i<4; i++) {
-    if(commandBuffer[tail].moveAxis[i]) {
-      steppers[i].targetPulses = commandBuffer[tail].targetPulses[i];
+    if(com.commandBuffer[tail].moveAxis[i]) {
+      steppers[i].targetPulses = com.commandBuffer[tail].targetPulses[i];
       steppers[i].inPosition = false;
     }
     if (axisToHome == i) {
@@ -316,8 +150,8 @@ void executeCommand() {
     }
   }
   
-  gripperState = commandBuffer[tail].gripperState;
-  gripperPow = commandBuffer[tail].gripperPow;
+  gripperState = com.commandBuffer[tail].gripperState;
+  gripperPow = com.commandBuffer[tail].gripperPow;
   
   //axis with most steps is master
   int iMax = 0;
@@ -359,9 +193,9 @@ void executeCommand() {
   speedNow = speedMin;
   iTemp = 1000000/(speedNow*steppers[master].stepsPerDeg); //speedMin (deg/s), stepsPerDeg, 1000000 us/s
   if (axisToHome == 9) {
-    motionType = 1;
+    motionType = accelMove;
   } else {
-    motionType = 0;
+    motionType = noMove;
   }
   timePrevSpeed = timeNow;
   TIMSK1 |= 1<<OCIE1A;
@@ -381,15 +215,15 @@ ISR(TIMER1_COMPA_vect) {
   //compute steps to target from current position
   for(int i=0; i<4; i++) {
     steppers[i].computeStepsToTarget();
-    if (steppers[i].stepsToTarget == 0) {
-      steppers[i].inPosition = true;
-    }
   }
-  if (steppers[0].inPosition && steppers[1].inPosition && steppers[2].inPosition && steppers[3].inPosition) {
+  if ((steppers[0].inPosition | !steppers[0].enabled) 
+    && (steppers[1].inPosition | !steppers[1].enabled) 
+    && (steppers[2].inPosition | !steppers[2].enabled)
+    && (steppers[3].inPosition | !steppers[3].enabled)) {
     busy = 0;
     TIMSK1 = 0;
     motionType = 0;
-    commandBuffer[tail].complete = 1;
+    com.setComplete();
     return;
   }
   for(int i=0; i<4; i++) {
@@ -399,7 +233,7 @@ ISR(TIMER1_COMPA_vect) {
       busy = 0;
       TIMSK1 = 0;
       axisToHome = 9;
-      commandBuffer[tail].complete = 1;
+      com.setComplete();
       return;
     }
   }
@@ -468,14 +302,4 @@ void gripper() {
     digitalWrite(pinGripPow, 0);
     gripperState = 0;
   }
-}
-
-void initializeBuffer() {
-  head = 1;
-  tail = 0;
-  nextHead = 2;
-  nextTail = 1;
-  commandBuffer[tail].complete = true;
-  commandBuffer[tail].waitComplete = true;
-  commandBuffer[nextTail].set = false;
 }

@@ -12,6 +12,7 @@ class stepper {
     volatile float fractionRemaining;
     int pinEnable, pinStep, pinDir, pinEncA, pinEncB, pinHome;
     volatile bool inPosition = false;
+    bool enabled = true;
     stepper();
     stepper(int enable, int step, int dir, int encA, int encB, int home, int _pulsesPerRev, int _stepsPerRev, float _gearRatio);
     void enable();
@@ -22,12 +23,5 @@ class stepper {
     float computePosition();
     float computeTarget();
 };
-
-//void stepperSetup(int pinEnable, int pinStep, int pinDir, int pinEncA, int pinEncB, int pinHome);
-//void enable(int pinEnable);
-//void encoder0();
-//void encoder1();
-//void encoder2();
-//void encoder3();
 
 #endif
