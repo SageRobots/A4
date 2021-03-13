@@ -12,6 +12,8 @@ bool timeWaitSet;
 volatile uint8_t busy = 0;
 uint8_t master, slave1, slave2, slave3, masterStepBit, slave1StepBit, slave2StepBit, slave3StepBit;
 volatile uint8_t dirBits, stepBits;
+float speedMin = 20;
+float speedNow;
 uint32_t accelSteps;
 float x, t;
 uint32_t iTemp;
@@ -45,13 +47,15 @@ const uint8_t stepBit[4] = {1<<0, 1<<1, 1<<2, 1<<3};
 const uint8_t stepMask = stepBit[0] | stepBit[1] | stepBit[2] | stepBit[3];
 
 void setup() {
-  //stepper objects (int enable, int step, int dir, int encA, int encB, int home, int pulsesPerRev, int stepsPerRev)
-  steppers[0] = stepper(A8, 37, 53, 21, 13, A0, 1000, 200, 26+103.0/121.0);
+  //stepper objects (int enable, int step, int dir, int encA, int encB, int home, int pulsesPerRev, int stepsPerRev, float gearRatio)
+  steppers[0] = stepper(A8, 37, 53, 21, 13, A0, 1000, 200*4, 26+103.0/121.0);
   steppers[1] = stepper(A1, 36, 52, 20, 17, 4, 1000, 200, 26+103.0/121.0);
   steppers[2] = stepper(A10, 35, 51, 19, A14, 24, 1000, 200, 26+103.0/121.0);
   steppers[3] = stepper(49, 34, 50, 18, 25, 29, 300, 200, 26+103.0/121.0);
-
-  //stepper setup
+  steppers[1].disable();
+  steppers[2].disable();
+  steppers[3].disable();
+  
   //configure timer 1 as stepper driver input, CTC, no prescaler
   TCCR1A = 0;
   TCCR1B |= (1<<WGM12)|(1<<CS10);
@@ -82,18 +86,19 @@ void loop() {
 
   timeNow = millis();
 
-  com.updateBuffer();
-
-  //run the gripper
+  com.updateBuffer(timeNow);
+  if(com.execute) {
+    executeCommand();
+  }
   gripper();
 
   //alter the speed
   if ((motionType > noMove) && (timeNow - timePrevSpeed >= 100)) {
     //accelerate or hold at least halfway, then until stepsToTarget <= accelSteps
     if (motionType == accelMove) { //accelerate
-      speedNow += (timeNow-timePrevSpeed)/1000.0*accel;
-      if (speedNow > speedMax) {
-        speedNow = speedMax;
+      speedNow += (timeNow-timePrevSpeed)/1000.0*com.accel;
+      if (speedNow > com.speedMax) {
+        speedNow = com.speedMax;
         accelSteps = abs(steppers[master].stepsToTarget - steppers[master].stepsNeeded);
         motionType = holdMove;
       }
@@ -104,7 +109,7 @@ void loop() {
     } else if (motionType == holdMove) {
       if (abs(steppers[master].stepsToTarget) <= accelSteps) motionType = decelMove;
     } else if (motionType == decelMove) {
-        speedNow -= (timeNow-timePrevSpeed)/1000.0*accel;
+        speedNow -= (timeNow-timePrevSpeed)/1000.0*com.accel;
         if (speedNow < speedMin) speedNow = speedMin;
     }
     iTemp = 1000000/(speedNow*steppers[master].stepsPerDeg);
@@ -113,7 +118,7 @@ void loop() {
   
   //periodically print the position
   if (timeNow - timePrint >= 2000) {
-    printStatus(steppers);
+    com.printStatus();
     timePrint = timeNow;
   }
 }
@@ -137,15 +142,17 @@ void encoder3() {
 void executeCommand() {
   //copy data out of buffer
   timeWait = timeNow;
+  uint8_t tail = com.tail;
   axisToHome = com.commandBuffer[tail].axisToHome;
   for(int i=0; i<4; i++) {
     if(com.commandBuffer[tail].moveAxis[i]) {
       steppers[i].targetPulses = com.commandBuffer[tail].targetPulses[i];
+      Serial.println(steppers[i].targetPulses);
       steppers[i].inPosition = false;
     }
     if (axisToHome == i) {
       steppers[i].currentPulses = 0;
-      steppers[i].targetPulses = round(steppers[i].pulsesPerRev*steppers[i].gearRatio);
+      steppers[i].targetPulses = -round(steppers[i].pulsesPerRev*steppers[i].gearRatio);
       steppers[i].inPosition = false;
     }
   }
@@ -171,17 +178,17 @@ void executeCommand() {
   slave1StepBit = stepBit[1];
   slave2StepBit = stepBit[2];
   slave3StepBit = stepBit[3];
-  if(iMax == 1) {
+  if(iMax == 1 && steppers[1].enabled) {
     master = 1;
     slave1 = 0;
     masterStepBit = stepBit[1];
     slave1StepBit = stepBit[0];
-  } else if (iMax == 2) {
+  } else if (iMax == 2 && steppers[2].enabled) {
     master = 2;
     slave2 = 0;
     masterStepBit = stepBit[2];
     slave2StepBit = stepBit[0];
-  } else {
+  } else if (iMax == 3 && steppers[3].enabled) {
     master = 3;
     slave3 = 0;
     masterStepBit = stepBit[3];
@@ -205,7 +212,7 @@ ISR(TIMER1_COMPA_vect) {
   //avoid reentering interrupt
   if(busy) {
     //flag this value as too fast
-    tooFast = OCR1A;
+    com.tooFast = OCR1A;
     return;
   }
   busy = 1;
@@ -224,6 +231,7 @@ ISR(TIMER1_COMPA_vect) {
     TIMSK1 = 0;
     motionType = 0;
     com.setComplete();
+    Serial.println("complete1");
     return;
   }
   for(int i=0; i<4; i++) {
@@ -234,6 +242,7 @@ ISR(TIMER1_COMPA_vect) {
       TIMSK1 = 0;
       axisToHome = 9;
       com.setComplete();
+      Serial.println("complete2");
       return;
     }
   }

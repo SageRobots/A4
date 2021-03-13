@@ -5,12 +5,6 @@
 #include "stepper.h"
 
 class com {
-	private:
-		float speedMax = 90;
-		float speedMin = 20;
-		float speedNow;
-		float accel = 30;
-
 	public:
 		struct command {
 		  bool moveAxis[4];
@@ -30,12 +24,16 @@ class com {
 		volatile uint32_t tooFast = 0;
 		stepper *steppers;
 
+    float speedMax = 90;
+    float accel = 30;
+    bool execute=false;
+
 		com(stepper _steppers[4]);
     void initializeBuffer();
 		void readSerial();
 		void parseLine(char* line);
 		void printStatus();
-    void updateBuffer();
+    void updateBuffer(unsigned long timeNow);
     void setComplete();
 };
 

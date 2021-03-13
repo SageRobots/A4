@@ -2,6 +2,7 @@
 
 com::com(stepper _steppers[4]) {
   steppers = _steppers;
+  initializeBuffer();
 }
 
 void com::initializeBuffer() {
@@ -55,7 +56,7 @@ void com::parseLine(char* line) {
   double fValue;
   uint8_t c;
   i=0;
-  //initialize commandBuffer
+  //set head data to default values
   commandBuffer[head].gripperState = 0;
   commandBuffer[head].axisToHome = 9;
   commandBuffer[head].moveAxis[0] = 0;
@@ -87,19 +88,19 @@ void com::parseLine(char* line) {
     if (strcmp(cmd,"M0A") == 0) {
       //absolute move of J0
       commandBuffer[head].targetPulses[0] = round(fValue*steppers[0].pulsesPerDegOut);
-      commandBuffer[head].moveAxis[0] = 1;
+      commandBuffer[head].moveAxis[0] = true;
     } else if (strcmp(cmd,"M1A") == 0) {
       //absolute move of J1
       commandBuffer[head].targetPulses[1] = round(fValue*steppers[1].pulsesPerDegOut);
-      commandBuffer[head].moveAxis[1] = 1;
+      commandBuffer[head].moveAxis[1] = true;
     } else if (strcmp(cmd,"M2A") == 0) {
       //absolute move of J2
       commandBuffer[head].targetPulses[2] = round(fValue*steppers[2].pulsesPerDegOut);
-      commandBuffer[head].moveAxis[2] = 1;
+      commandBuffer[head].moveAxis[2] = true;
     } else if (strcmp(cmd,"M3A") == 0) {
       //absolute move of J3
       commandBuffer[head].targetPulses[3] = round(fValue*steppers[3].pulsesPerDegOut);
-      commandBuffer[head].moveAxis[3] = 1;
+      commandBuffer[head].moveAxis[3] = true;
     } else if (strcmp(cmd,"SPD") == 0) {
       speedMax = fValue;
     } else if (strcmp(cmd,"ACC") == 0) {
@@ -126,14 +127,19 @@ void com::parseLine(char* line) {
     } else if (strcmp(cmd,"DEL") == 0) {
       commandBuffer[head].wait = fValue;
     } else {
-      Serial.print("Unknown command: ");
-      Serial.println(cmd);
+      Serial.print("\nUnknown command");
     }
   }
+  Serial.print("\nCommand: ");
+  Serial.print(cmd);
   commandBuffer[head].set = 1;
 }
 
 void com::printStatus() {
+  Serial.print("\nhead");
+  Serial.print(head);
+  Serial.print("\ntail");
+  Serial.print(tail);
 	if(head != tail) {
 	  Serial.print("\nReady");
 	}
@@ -160,6 +166,7 @@ void com::updateBuffer(unsigned long timeNow) {
     commandBuffer[tail].waitComplete = 1;
   }
   //check if command complete
+  execute=false;
   if(commandBuffer[nextTail].set && commandBuffer[tail].complete && commandBuffer[tail].waitComplete) {
     commandBuffer[tail].complete = false;
     commandBuffer[tail].waitComplete = false;
@@ -171,10 +178,11 @@ void com::updateBuffer(unsigned long timeNow) {
     } else {
       nextTail++;
     }
-    executeCommand();
+    execute=true;
   }
 }
 
 void com::setComplete() {
   commandBuffer[tail].complete = true;
+  
 }

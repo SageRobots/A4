@@ -28,9 +28,11 @@ stepper::stepper(int enable, int step, int dir, int encA, int encB, int home, in
 }
 void stepper::enable() {
   digitalWrite(pinEnable, LOW);
+  enabled = true;
 }
 void stepper::disable() {
   digitalWrite(pinEnable, HIGH);
+  enabled = false;
 }
 void stepper::encoder() {
   //if pin B is the same, the motion is ccw positive
