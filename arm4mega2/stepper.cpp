@@ -1,7 +1,7 @@
 #include "stepper.h"
 
 stepper::stepper(){}
-stepper::stepper(int enable, int step, int dir, int encA, int encB, int home, int pulsesPerRev, int stepsPerRev) {
+stepper::stepper(int enable, int step, int dir, int encA, int encB, int home, int _pulsesPerRev, int _stepsPerRev, float _gearRatio) {
   //assign the pins
   pinEnable = enable;
   pinStep = step;
@@ -19,7 +19,12 @@ stepper::stepper(int enable, int step, int dir, int encA, int encB, int home, in
   pinMode(pinHome, INPUT_PULLUP);
 
   //compute the stepsPerPulse
-  stepsPerPulse = (float)stepsPerRev/(float)pulsesPerRev;
+  stepsPerPulse = (float)_stepsPerRev/(float)_pulsesPerRev;
+  pulsesPerRev = _pulsesPerRev;
+  stepsPerRev = _stepsPerRev;
+  gearRatio = _gearRatio;
+  stepsPerDeg = stepsPerRev*gearRatio/360.0;
+  pulsesPerDegOut = pulsesPerRev*gearRatio/360.0;
 }
 void stepper::enable() {
   digitalWrite(pinEnable, LOW);
@@ -44,4 +49,12 @@ int stepper::computeStepsToTarget() {
 
 void stepper::computeFractionRemaining() {
   fractionRemaining = abs((float)stepsToTarget/(float)stepsNeeded);
+}
+
+float stepper::computePosition() {
+  return currentPulses/pulsesPerDegOut;
+}
+
+float stepper::computeTarget() {
+  return targetPulses/pulsesPerDegOut;
 }

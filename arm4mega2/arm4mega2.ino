@@ -1,14 +1,7 @@
 
 #include "stepper.h"
 
-//define variables for pins used
-const int pinEncA[4] = {21,20,19,18};
-const int pinEncB[4] = {13,17,A14,25};
-const int pinEnable[4] = {A8,A1,A10,49};
-const int pinDir[4] = {53,52,51,50};
-const int pinHome[4] = {A0,4,24,29};
-const int pinStep[4] = {37,36,35,34};
-
+//define variables for pins
 const int pinGripDir = 10;
 const int pinGripPow = 11;
 
@@ -17,12 +10,7 @@ unsigned long timePrint, timePrevSpeed;
 volatile uint32_t tooFast = 0;
 bool timeWaitSet;
 
-const float gearRatio[4] = {26+103.0/121, 26+103.0/121, 26+103.0/121, 26+103.0/121};
-int pulsesPerRev[4] = {1000, 1000, 1000, 300}; //pulses per revolution of input shaft
-int stepsPerRev[4] = {200, 200, 200, 200}; //steps per revolution of input shaft
-const float pulsesPerDeg[4] = {1000.0/360,1000.0/360,1000.0/360,300.0/360}; //gear box input degrees
 volatile uint8_t busy = 0;
-const float stepsPerDeg[4] = {1/1.8*gearRatio[0]*2, 1/1.8*gearRatio[1]*2, 1/1.8*gearRatio[2]*2, 1/1.8*gearRatio[3]*2}; //~30
 uint8_t master, slave1, slave2, slave3, masterStepBit, slave1StepBit, slave2StepBit, slave3StepBit;
 volatile uint8_t dirBits, stepBits;
 float speedMax = 90;
@@ -64,23 +52,21 @@ uint8_t head, tail, nextHead, nextTail;
 stepper steppers[4];
 
 //ports and bits for writing direction and step ports in 1 command
-const uint8_t dirPort = PORTB;
+#define DIR_PORT PORTB
 const uint8_t dirBit[4] = {1<<0, 1<<1, 1<<2, 1<<3};
 const uint8_t dirMask = dirBit[0] | dirBit[1] | dirBit[2] | dirBit[3];
 
 #define STEP_PORT PORTC
-#define STEP_BIT_0 0
-#define STEP_BIT_1 1
-#define STEP_BIT_2 2
-#define STEP_BIT_3 3
-#define STEP_MASK ((1<<STEP_BIT_0)|(1<<STEP_BIT_1)|(1<<STEP_BIT_2)|(1<<STEP_BIT_3))
+const uint8_t stepBit[4] = {1<<0, 1<<1, 1<<2, 1<<3};
+const uint8_t stepMask = stepBit[0] | stepBit[1] | stepBit[2] | stepBit[3];
 
 void setup() {
   initializeBuffer();
-
-  for(int i=0; i<4; i++) {
-    steppers[i] = stepper(pinEnable[i], pinStep[i], pinDir[i], pinEncA[i], pinEncB[i], pinHome[i], pulsesPerRev[i], stepsPerRev[i]);
-  }
+  //stepper objects (int enable, int step, int dir, int encA, int encB, int home, int pulsesPerRev, int stepsPerRev)
+  steppers[0] = stepper(A8, 37, 53, 21, 13, A0, 1000, 200, 26+103.0/121.0);
+  steppers[1] = stepper(A1, 36, 52, 20, 17, 4, 1000, 200, 26+103.0/121.0);
+  steppers[2] = stepper(A10, 35, 51, 19, A14, 24, 1000, 200, 26+103.0/121.0);
+  steppers[3] = stepper(49, 34, 50, 18, 25, 29, 300, 200, 26+103.0/121.0);
 
   //stepper setup
   //configure timer 1 as stepper driver input, CTC, no prescaler
@@ -92,16 +78,11 @@ void setup() {
   TCCR3B |= (1<<WGM32)|(1<<CS30);
   TIMSK3 = 0;
 
-//  stepperSetup(pinEnable0, pinStep0, pinDir0, pinEnc0A, pinEnc0B, pinHome0);
-//  stepperSetup(pinEnable1, pinStep1, pinDir1, pinEnc1A, pinEnc1B, pinHome1);
-//  stepperSetup(pinEnable2, pinStep2, pinDir2, pinEnc2A, pinEnc2B, pinHome2);
-//  stepperSetup(pinEnable3, pinStep3, pinDir3, pinEnc3A, pinEnc3B, pinHome3);
-  
   //attach interrupts to encoder A channels
-  attachInterrupt(digitalPinToInterrupt(pinEncA[0]), encoder0, RISING);
-  attachInterrupt(digitalPinToInterrupt(pinEncA[1]), encoder1, RISING);
-  attachInterrupt(digitalPinToInterrupt(pinEncA[2]), encoder2, RISING);
-  attachInterrupt(digitalPinToInterrupt(pinEncA[3]), encoder3, RISING);
+  attachInterrupt(digitalPinToInterrupt(steppers[0].pinEncA), encoder0, RISING);
+  attachInterrupt(digitalPinToInterrupt(steppers[1].pinEncA), encoder1, RISING);
+  attachInterrupt(digitalPinToInterrupt(steppers[2].pinEncA), encoder2, RISING);
+  attachInterrupt(digitalPinToInterrupt(steppers[3].pinEncA), encoder3, RISING);
 
   //gripper setup
   pinMode(pinGripDir, OUTPUT);
@@ -188,34 +169,28 @@ void loop() {
         speedNow -= (timeNow-timePrevSpeed)/1000.0*accel;
         if (speedNow < speedMin) speedNow = speedMin;
     }
-    iTemp = 1000000/(speedNow*stepsPerDeg[0]);
+    iTemp = 1000000/(speedNow*steppers[master].stepsPerDeg);
     timePrevSpeed = timeNow;
   }
   
   //periodically print the position
   if (timeNow - timePrint >= 2000) {
     if(head != tail) {
-      Serial.println("Ready");
+      Serial.print("\nReady");
     }
     Serial.print("\nPos: ");
-    Serial.print(steppers[0].currentPulses/gearRatio[0]/pulsesPerDeg[0]);
-    Serial.print(", ");
-    Serial.print(steppers[1].currentPulses/gearRatio[1]/pulsesPerDeg[1]);
-    Serial.print(", ");
-    Serial.print(steppers[2].currentPulses/gearRatio[2]/pulsesPerDeg[2]);
-    Serial.print(", ");
-    Serial.println(steppers[3].currentPulses/gearRatio[3]/pulsesPerDeg[3]);
-    Serial.print("Target: ");
-    Serial.print(steppers[0].targetPulses/gearRatio[0]/pulsesPerDeg[0]);
-    Serial.print(", ");
-    Serial.print(steppers[1].targetPulses/gearRatio[1]/pulsesPerDeg[1]);
-    Serial.print(", ");
-    Serial.print(steppers[2].targetPulses/gearRatio[2]/pulsesPerDeg[2]);
-    Serial.print(", ");
-    Serial.println(steppers[3].targetPulses/gearRatio[3]/pulsesPerDeg[3]);
+    for(int i=0; i<4; i++) {
+      Serial.print(steppers[i].computePosition());
+      Serial.print(", ");
+    }
+    Serial.print("\nTarget: ");
+    for(int i=0; i<4; i++) {
+      Serial.print(steppers[i].computeTarget());
+      Serial.print(", ");
+    }
     if (tooFast > 0) {
-      Serial.print("Too fast: ");
-      Serial.println(tooFast);
+      Serial.print("\nToo fast: ");
+      Serial.print(tooFast);
       tooFast = 0;
     }
     timePrint = timeNow;
@@ -278,19 +253,19 @@ void parseLine(char *line) {
     //interpret parsed command
     if (strcmp(cmd,"M0A") == 0) {
       //absolute move of J0
-      commandBuffer[head].targetPulses[0] = round(fValue*pulsesPerDeg[0]*gearRatio[0]);
+      commandBuffer[head].targetPulses[0] = round(fValue*steppers[0].pulsesPerDegOut);
       commandBuffer[head].moveAxis[0] = 1;
     } else if (strcmp(cmd,"M1A") == 0) {
       //absolute move of J1
-      commandBuffer[head].targetPulses[1] = round(fValue*pulsesPerDeg[1]*gearRatio[1]);
+      commandBuffer[head].targetPulses[1] = round(fValue*steppers[1].pulsesPerDegOut);
       commandBuffer[head].moveAxis[1] = 1;
     } else if (strcmp(cmd,"M2A") == 0) {
       //absolute move of J2
-      commandBuffer[head].targetPulses[2] = round(fValue*pulsesPerDeg[2]*gearRatio[2]);
+      commandBuffer[head].targetPulses[2] = round(fValue*steppers[2].pulsesPerDegOut);
       commandBuffer[head].moveAxis[2] = 1;
     } else if (strcmp(cmd,"M3A") == 0) {
       //absolute move of J3
-      commandBuffer[head].targetPulses[3] = round(fValue*pulsesPerDeg[3]*gearRatio[3]);
+      commandBuffer[head].targetPulses[3] = round(fValue*steppers[3].pulsesPerDegOut);
       commandBuffer[head].moveAxis[3] = 1;
     } else if (strcmp(cmd,"SPD") == 0) {
       speedMax = fValue;
@@ -336,7 +311,7 @@ void executeCommand() {
     }
     if (axisToHome == i) {
       steppers[i].currentPulses = 0;
-      steppers[i].targetPulses = round(360*pulsesPerDeg[i]*gearRatio[i]);
+      steppers[i].targetPulses = round(steppers[i].pulsesPerRev*steppers[i].gearRatio);
       steppers[i].inPosition = false;
     }
   }
@@ -358,31 +333,31 @@ void executeCommand() {
   slave1 = 1;
   slave2 = 2;
   slave3 = 3;
-  masterStepBit = 1<<STEP_BIT_0;
-  slave1StepBit = 1<<STEP_BIT_1;
-  slave2StepBit = 1<<STEP_BIT_2;
-  slave3StepBit = 1<<STEP_BIT_3;
+  masterStepBit = stepBit[0];
+  slave1StepBit = stepBit[1];
+  slave2StepBit = stepBit[2];
+  slave3StepBit = stepBit[3];
   if(iMax == 1) {
     master = 1;
     slave1 = 0;
-    masterStepBit = 1<<STEP_BIT_1;
-    slave1StepBit = 1<<STEP_BIT_0;
+    masterStepBit = stepBit[1];
+    slave1StepBit = stepBit[0];
   } else if (iMax == 2) {
     master = 2;
     slave2 = 0;
-    masterStepBit = 1<<STEP_BIT_2;
-    slave2StepBit = 1<<STEP_BIT_0;
+    masterStepBit = stepBit[2];
+    slave2StepBit = stepBit[0];
   } else {
     master = 3;
     slave3 = 0;
-    masterStepBit = 1<<STEP_BIT_3;
-    slave3StepBit = 1<<STEP_BIT_0;
+    masterStepBit = stepBit[3];
+    slave3StepBit = stepBit[0];
   }
   
   //enable interrupt to start the move
   //set interrupt time based on speedMin
   speedNow = speedMin;
-  iTemp = 1000000/(speedNow*stepsPerDeg[0]); //speedMin (deg/s), stepsPerDeg, 1000000 us/s
+  iTemp = 1000000/(speedNow*steppers[master].stepsPerDeg); //speedMin (deg/s), stepsPerDeg, 1000000 us/s
   if (axisToHome == 9) {
     motionType = 1;
   } else {
@@ -418,7 +393,7 @@ ISR(TIMER1_COMPA_vect) {
     return;
   }
   for(int i=0; i<4; i++) {
-    if (axisToHome == i && !digitalRead(pinHome[i])) {
+    if (axisToHome == i && !digitalRead(steppers[i].pinHome)) {
       steppers[i].currentPulses = 0;
       steppers[i].targetPulses = 0;
       busy = 0;
@@ -431,40 +406,15 @@ ISR(TIMER1_COMPA_vect) {
 
   //set direction 0
   for(int i=0; i<4; i++) {
-    if (stepsToTarget[i] < 0) {
-      dirBits |= 1<<DIR_BIT_0;
+    if (steppers[i].stepsToTarget < 0) {
+      dirBits |= dirBit[i];
     } else {
-      dirBits &= ~(1<<DIR_BIT_0);
+      dirBits &= ~dirBit[i];
     }
   }
-  //set direction 1
-  if (stepsToTarget[1] < 0) {
-    dirBits |= 1<<DIR_BIT_1;
-  } else {
-    dirBits &= ~(1<<DIR_BIT_1);
-  }
-  //set direction 2
-  if (stepsToTarget[2] < 0) {
-    dirBits |= 1<<DIR_BIT_2;
-  } else {
-    dirBits &= ~(1<<DIR_BIT_2);
-  }
-  //set direction 3
-  if (steppers[3]stepsToTarget >= 0) {
-    dirBits |= 1<<DIR_BIT_3;
-  } else {
-    dirBits &= ~(1<<DIR_BIT_3);
-  }
-  //home 1 in negative direction
-  if (axisToHome == 0) {
-    dirBits |= 1<<DIR_BIT_0;
-  } else if (axisToHome == 1) {
-    dirBits |= 1<<DIR_BIT_1;
-  } else if (axisToHome == 2) {
-    dirBits |= 1<<DIR_BIT_2;
-  }
+
   //write direction port
-  DIR_PORT = (DIR_PORT & ~DIR_MASK) | (dirBits & DIR_MASK);
+  DIR_PORT = (DIR_PORT & ~dirMask) | (dirBits & dirMask);
 
   for(int i=0; i<4; i++) {
     steppers[i].computeFractionRemaining();
@@ -486,7 +436,7 @@ ISR(TIMER1_COMPA_vect) {
   }
 
   //write the step port
-  STEP_PORT = (STEP_PORT & ~STEP_MASK)|(stepBits & STEP_MASK);
+  STEP_PORT = (STEP_PORT & ~stepMask)|(stepBits & stepMask);
 
   //enable the pulse reset timer
   OCR3A = 100;
@@ -496,7 +446,7 @@ ISR(TIMER1_COMPA_vect) {
 
 ISR(TIMER3_COMPA_vect) {
   //reset step pins
-  STEP_PORT = (STEP_PORT & ~STEP_MASK);
+  STEP_PORT = STEP_PORT & ~stepMask;
   //disable timer
   TIMSK3 = 0;
 }
