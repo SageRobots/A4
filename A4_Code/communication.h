@@ -9,9 +9,8 @@ class com {
 		struct command {
 		  bool moveAxis[4];
 		  int32_t targetPulses[4];
-		  int32_t axisToHome;
-		  int32_t gripperState;
-		  int32_t gripperPow;
+		  int axisToHome;
+		  int gripperPow;
 		  bool set;
 		  bool complete;
 		  unsigned long wait;

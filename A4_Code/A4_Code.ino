@@ -1,11 +1,8 @@
 #include "stepper.h"
 #include "communication.h"
+#include "gripper.h"
 
-//define variables for pins
-const int pinGripDir = 10;
-const int pinGripPow = 11;
-
-unsigned long timeNow, timeGrip, timeWait;
+unsigned long timeNow, timeWait;
 unsigned long timePrint, timePrevSpeed;
 bool timeWaitSet;
 
@@ -18,8 +15,6 @@ uint32_t accelSteps;
 float x, t;
 uint32_t iTemp;
 volatile int32_t axisToHome = 9;
-int32_t gripperState = 0;
-int32_t gripperPow = 0;
 int32_t wait = 0;
 
 enum motionType {
@@ -34,6 +29,9 @@ stepper steppers[4];
 
 //create com object
 com com(steppers);
+
+//create gripper object
+gripper gripper(11, 10, 23);
 
 motionType motionType;
 
@@ -68,10 +66,6 @@ void setup() {
   attachInterrupt(digitalPinToInterrupt(steppers[2].pinEncA), encoder2, RISING);
   attachInterrupt(digitalPinToInterrupt(steppers[3].pinEncA), encoder3, RISING);
 
-  //gripper setup
-  pinMode(pinGripDir, OUTPUT);
-  pinMode(pinGripPow, OUTPUT);
-
   //serial setup
   Serial.begin(115200);
   while (!Serial);
@@ -88,7 +82,7 @@ void loop() {
     executeCommand();
   }
   
-//  gripper();
+  gripper.update();
 
   //alter the speed
   if ((motionType > noMove) && (timeNow - timePrevSpeed >= 50)) {
@@ -154,8 +148,7 @@ void executeCommand() {
     }
   }
   
-  gripperState = com.commandBuffer[tail].gripperState;
-  gripperPow = com.commandBuffer[tail].gripperPow;
+  gripper.actuate(com.commandBuffer[tail].gripperPow);
   
   //axis with most steps is master
   int iMax = 0;
@@ -291,23 +284,4 @@ ISR(TIMER3_COMPA_vect) {
   STEP_PORT = STEP_PORT & ~stepMask;
   //disable timer
   TIMSK3 = 0;
-}
-
-void gripper() {
-  if(gripperState == 1) {
-    digitalWrite(pinGripDir, 1);
-    analogWrite(pinGripPow, 255-gripperPow);
-    gripperState = 2;
-    timeGrip = timeNow;
-  } else if (gripperState == -1) {
-    digitalWrite(pinGripDir, 0);
-    analogWrite(pinGripPow, gripperPow);
-    gripperState = -2;
-    timeGrip = timeNow;
-  }
-  if (timeNow - timeGrip >= 4000) {
-    digitalWrite(pinGripDir, 0);
-    digitalWrite(pinGripPow, 0);
-    gripperState = 0;
-  }
 }

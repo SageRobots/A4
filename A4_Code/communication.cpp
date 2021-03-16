@@ -57,7 +57,7 @@ void com::parseLine(char* line) {
   uint8_t c;
   i=0;
   //set head data to default values
-  commandBuffer[head].gripperState = 0;
+  commandBuffer[head].gripperPow = 0;
   commandBuffer[head].axisToHome = 9;
   commandBuffer[head].moveAxis[0] = 0;
   commandBuffer[head].moveAxis[1] = 0;
@@ -117,17 +117,7 @@ void com::parseLine(char* line) {
       }
       initializeBuffer();
     } else if (strcmp(cmd,"GRP") == 0) {
-      if (fValue > 0) {
-        digitalWrite(11,1);
-        analogWrite(10,round(fValue));
-//        commandBuffer[head].gripperState = 1;
-//        commandBuffer[head].gripperPow = fValue;
-      } else {
-        digitalWrite(11,0);
-        analogWrite(10,-1*round(fValue));
-//        commandBuffer[head].gripperState = -1;
-//        commandBuffer[head].gripperPow = -1*fValue;
-      }
+      commandBuffer[head].gripperPow = round(fValue);
     } else if (strcmp(cmd,"DEL") == 0) {
       commandBuffer[head].wait = fValue;
     } else {
