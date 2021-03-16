@@ -118,11 +118,15 @@ void com::parseLine(char* line) {
       initializeBuffer();
     } else if (strcmp(cmd,"GRP") == 0) {
       if (fValue > 0) {
-        commandBuffer[head].gripperState = 1;
-        commandBuffer[head].gripperPow = fValue;
+        digitalWrite(11,1);
+        analogWrite(10,round(fValue));
+//        commandBuffer[head].gripperState = 1;
+//        commandBuffer[head].gripperPow = fValue;
       } else {
-        commandBuffer[head].gripperState = -1;
-        commandBuffer[head].gripperPow = -1*fValue;
+        digitalWrite(11,0);
+        analogWrite(10,-1*round(fValue));
+//        commandBuffer[head].gripperState = -1;
+//        commandBuffer[head].gripperPow = -1*fValue;
       }
     } else if (strcmp(cmd,"DEL") == 0) {
       commandBuffer[head].wait = fValue;
@@ -136,10 +140,6 @@ void com::parseLine(char* line) {
 }
 
 void com::printStatus() {
-  Serial.print("\nhead");
-  Serial.print(head);
-  Serial.print("\ntail");
-  Serial.print(tail);
 	if(head != tail) {
 	  Serial.print("\nReady");
 	}

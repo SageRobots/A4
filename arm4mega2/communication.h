@@ -24,8 +24,8 @@ class com {
 		volatile uint32_t tooFast = 0;
 		stepper *steppers;
 
-    float speedMax = 90;
-    float accel = 30;
+    float speedMax = 100;
+    float accel = 100;
     bool execute=false;
 
 		com(stepper _steppers[4]);

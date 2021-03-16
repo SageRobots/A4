@@ -49,12 +49,9 @@ const uint8_t stepMask = stepBit[0] | stepBit[1] | stepBit[2] | stepBit[3];
 void setup() {
   //stepper objects (int enable, int step, int dir, int encA, int encB, int home, int pulsesPerRev, int stepsPerRev, float gearRatio)
   steppers[0] = stepper(A8, 37, 53, 21, 13, A0, 1000, 200*4, 26+103.0/121.0);
-  steppers[1] = stepper(A1, 36, 52, 20, 17, 4, 1000, 200, 26+103.0/121.0);
-  steppers[2] = stepper(A10, 35, 51, 19, A14, 24, 1000, 200, 26+103.0/121.0);
-  steppers[3] = stepper(49, 34, 50, 18, 25, 29, 300, 200, 26+103.0/121.0);
-  steppers[1].disable();
-  steppers[2].disable();
-  steppers[3].disable();
+  steppers[1] = stepper(A1, 36, 52, 20, 17, 4, 1000, 200*4, 26+103.0/121.0);
+  steppers[2] = stepper(A10, 35, 51, 19, A14, 24, 1000, 200*4, 26+103.0/121.0);
+  steppers[3] = stepper(49, 34, 50, 18, 25, 29, 300, 200*4, 26+103.0/121.0);
   
   //configure timer 1 as stepper driver input, CTC, no prescaler
   TCCR1A = 0;
@@ -90,10 +87,11 @@ void loop() {
   if(com.execute) {
     executeCommand();
   }
-  gripper();
+  
+//  gripper();
 
   //alter the speed
-  if ((motionType > noMove) && (timeNow - timePrevSpeed >= 100)) {
+  if ((motionType > noMove) && (timeNow - timePrevSpeed >= 50)) {
     //accelerate or hold at least halfway, then until stepsToTarget <= accelSteps
     if (motionType == accelMove) { //accelerate
       speedNow += (timeNow-timePrevSpeed)/1000.0*com.accel;
@@ -147,7 +145,6 @@ void executeCommand() {
   for(int i=0; i<4; i++) {
     if(com.commandBuffer[tail].moveAxis[i]) {
       steppers[i].targetPulses = com.commandBuffer[tail].targetPulses[i];
-      Serial.println(steppers[i].targetPulses);
       steppers[i].inPosition = false;
     }
     if (axisToHome == i) {
@@ -165,7 +162,9 @@ void executeCommand() {
   for(int i=0; i<4; i++) {
     steppers[i].stepsNeeded = steppers[i].computeStepsToTarget();
     if(abs(steppers[i].stepsNeeded) > abs(steppers[iMax].stepsNeeded)) {
-      iMax = i;
+      if(steppers[i].enabled) {
+        iMax = i;
+      }
     }
   }
 
@@ -178,17 +177,17 @@ void executeCommand() {
   slave1StepBit = stepBit[1];
   slave2StepBit = stepBit[2];
   slave3StepBit = stepBit[3];
-  if(iMax == 1 && steppers[1].enabled) {
+  if(iMax == 1) {
     master = 1;
     slave1 = 0;
     masterStepBit = stepBit[1];
     slave1StepBit = stepBit[0];
-  } else if (iMax == 2 && steppers[2].enabled) {
+  } else if (iMax == 2) {
     master = 2;
     slave2 = 0;
     masterStepBit = stepBit[2];
     slave2StepBit = stepBit[0];
-  } else if (iMax == 3 && steppers[3].enabled) {
+  } else if (iMax == 3) {
     master = 3;
     slave3 = 0;
     masterStepBit = stepBit[3];
