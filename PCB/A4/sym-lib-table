@@ -1,0 +1,3 @@
+(sym_lib_table
+  (lib (name A4)(type Legacy)(uri C:/Projects/A4/PCB/A4.lib)(options "")(descr ""))
+)
