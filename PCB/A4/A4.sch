@@ -164,12 +164,12 @@ $EndComp
 $Comp
 L power:GND #PWR026
 U 1 1 60899FEA
-P 5650 3150
-F 0 "#PWR026" H 5650 2900 50  0001 C CNN
-F 1 "GND" H 5655 2977 50  0000 C CNN
-F 2 "" H 5650 3150 50  0001 C CNN
-F 3 "" H 5650 3150 50  0001 C CNN
-	1    5650 3150
+P 5650 3450
+F 0 "#PWR026" H 5650 3200 50  0001 C CNN
+F 1 "GND" H 5655 3277 50  0000 C CNN
+F 2 "" H 5650 3450 50  0001 C CNN
+F 3 "" H 5650 3450 50  0001 C CNN
+	1    5650 3450
 	1    0    0    -1  
 $EndComp
 $Comp
@@ -247,9 +247,9 @@ Text GLabel 4550 1400 0    50   Input ~ 0
 IO0
 Text GLabel 4550 2700 0    50   Input ~ 0
 CHARGE
-Text GLabel 4550 2400 0    50   Input ~ 0
+Text GLabel 4550 2600 0    50   Input ~ 0
 ENCAB
-Text GLabel 4550 2300 0    50   Input ~ 0
+Text GLabel 4550 2500 0    50   Input ~ 0
 ENCAA
 Wire Wire Line
 	6550 1300 6450 1300
@@ -412,9 +412,9 @@ F 3 "" H 1250 3900 50  0001 C CNN
 	1    1250 3900
 	0    1    1    0   
 $EndComp
-Text GLabel 5850 2000 2    50   Input ~ 0
+Text GLabel 8300 3900 2    50   Input ~ 0
 MOTA2
-Text GLabel 5850 1900 2    50   Input ~ 0
+Text GLabel 8300 3800 2    50   Input ~ 0
 MOTA1
 Text GLabel 1250 4100 0    50   Input ~ 0
 MOTA1
@@ -788,11 +788,11 @@ F 3 "~" H 2800 5650 50  0001 C CNN
 $EndComp
 Wire Wire Line
 	1100 5850 1650 5850
-Text GLabel 3800 3350 0    50   Input ~ 0
+Text GLabel 8300 4300 2    50   Input ~ 0
 EN0
-Text GLabel 3800 3250 0    50   Input ~ 0
+Text GLabel 5850 2700 2    50   Input ~ 0
 STEP0
-Text GLabel 3800 3150 0    50   Input ~ 0
+Text GLabel 5850 2600 2    50   Input ~ 0
 DIR0
 Wire Wire Line
 	5100 4350 5250 4350
@@ -932,13 +932,13 @@ Wire Wire Line
 	4550 1000 5850 1000
 Wire Wire Line
 	750  800  650  800 
-Text GLabel 3800 2650 0    50   Input ~ 0
+Text GLabel 8300 4000 2    50   Input ~ 0
 MOTB1
-Text GLabel 3800 2750 0    50   Input ~ 0
+Text GLabel 8300 4100 2    50   Input ~ 0
 MOTB2
-Text GLabel 4550 2500 0    50   Input ~ 0
+Text GLabel 4550 2300 0    50   Input ~ 0
 ENCBA
-Text GLabel 4550 2600 0    50   Input ~ 0
+Text GLabel 4550 2400 0    50   Input ~ 0
 ENCBB
 Text GLabel 7950 1200 2    50   Input ~ 0
 DAC2
@@ -962,23 +962,23 @@ F 12 "Active" H 7950 2700 60  0001 L CNN "Status"
 	1    7750 1500
 	1    0    0    -1  
 $EndComp
-Text GLabel 3800 3450 0    50   Input ~ 0
+Text GLabel 5550 3150 3    50   Input ~ 0
 DIR1
-Text GLabel 4750 3150 3    50   Input ~ 0
+Text GLabel 5450 3150 3    50   Input ~ 0
 STEP1
-Text GLabel 4850 3150 3    50   Input ~ 0
+Text GLabel 8300 4200 2    50   Input ~ 0
 EN1
 Text GLabel 4950 3150 3    50   Input ~ 0
 DIR2
 Text GLabel 5250 3150 3    50   Input ~ 0
 STEP2
-Text GLabel 5350 3150 3    50   Input ~ 0
+Text GLabel 7600 4300 0    50   Input ~ 0
 EN2
-Text GLabel 5450 3150 3    50   Input ~ 0
+Text GLabel 4850 3150 3    50   Input ~ 0
 DIR3
-Text GLabel 5550 3150 3    50   Input ~ 0
+Text GLabel 4750 3150 3    50   Input ~ 0
 STEP3
-Text GLabel 5850 2700 2    50   Input ~ 0
+Text GLabel 7600 4200 0    50   Input ~ 0
 EN3
 $Comp
 L Connector:Conn_01x06_Male J3
@@ -1149,17 +1149,17 @@ U 6090A275
 F0 "STEPPERS" 50
 F1 "A4_STEPPERS.sch" 50
 $EndSheet
-Text GLabel 6500 2700 2    50   Input ~ 0
+Text GLabel 5850 2300 2    50   Input ~ 0
 HOM0
-Text GLabel 6500 2600 2    50   Input ~ 0
+Text GLabel 5850 2200 2    50   Input ~ 0
 HOM1
-Text GLabel 6500 2500 2    50   Input ~ 0
+Text GLabel 5850 2100 2    50   Input ~ 0
 HOM2
-Text GLabel 6500 2400 2    50   Input ~ 0
+Text GLabel 5850 2000 2    50   Input ~ 0
 HOM3
-Text GLabel 6500 2300 2    50   Input ~ 0
+Text GLabel 5850 1900 2    50   Input ~ 0
 HOMA
-Text GLabel 6500 2200 2    50   Input ~ 0
+Text GLabel 5850 1800 2    50   Input ~ 0
 HOMB
 $Comp
 L Connector:Conn_01x02_Male J2
@@ -1231,13 +1231,13 @@ Text GLabel 4550 1700 0    50   Input ~ 0
 ENC2B
 Text GLabel 4550 1800 0    50   Input ~ 0
 ENC2A
-Text GLabel 4550 1900 0    50   Input ~ 0
-ENC1B
 Text GLabel 4550 2000 0    50   Input ~ 0
+ENC1B
+Text GLabel 4550 1900 0    50   Input ~ 0
 ENC1A
-Text GLabel 4550 2100 0    50   Input ~ 0
-ENC0B
 Text GLabel 4550 2200 0    50   Input ~ 0
+ENC0B
+Text GLabel 4550 2100 0    50   Input ~ 0
 ENC0A
 $Comp
 L Connector:Conn_01x04_Male J25
@@ -1276,12 +1276,72 @@ F 3 "" H 7550 2600 50  0001 C CNN
 $EndComp
 Wire Wire Line
 	7550 2600 7900 2600
-Text GLabel 7900 2400 0    50   Input ~ 0
+Text GLabel 7600 3700 0    50   Input ~ 0
 SCL
-Text GLabel 7900 2500 0    50   Input ~ 0
+Text GLabel 7600 3800 0    50   Input ~ 0
 SDA
-Text GLabel 5850 2600 2    50   Input ~ 0
+Text GLabel 5850 2400 2    50   Input ~ 0
 SCL
 Text GLabel 5850 2500 2    50   Input ~ 0
 SDA
+$Comp
+L A4:MCP23009 U6
+U 1 1 608B6769
+P 7950 3900
+F 0 "U6" H 7950 4565 50  0000 C CNN
+F 1 "MCP23009" H 7950 4474 50  0000 C CNN
+F 2 "Package_SO:SOIC-18W_7.5x11.6mm_P1.27mm" H 7950 3950 50  0001 C CNN
+F 3 "" H 7950 3950 50  0001 C CNN
+	1    7950 3900
+	1    0    0    -1  
+$EndComp
+Text GLabel 7900 2400 0    50   Input ~ 0
+CLK
+Text GLabel 7900 2500 0    50   Input ~ 0
+DAT
+$Comp
+L power:+3V3 #PWR0101
+U 1 1 608B8028
+P 7500 3500
+F 0 "#PWR0101" H 7500 3350 50  0001 C CNN
+F 1 "+3V3" H 7515 3673 50  0000 C CNN
+F 2 "" H 7500 3500 50  0001 C CNN
+F 3 "" H 7500 3500 50  0001 C CNN
+	1    7500 3500
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	7500 3500 7600 3500
+$Comp
+L power:GND #PWR0104
+U 1 1 608BAFEB
+P 7300 3900
+F 0 "#PWR0104" H 7300 3650 50  0001 C CNN
+F 1 "GND" H 7305 3727 50  0000 C CNN
+F 2 "" H 7300 3900 50  0001 C CNN
+F 3 "" H 7300 3900 50  0001 C CNN
+	1    7300 3900
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	7300 3900 7600 3900
+$Comp
+L power:GND #PWR0108
+U 1 1 608BDF3C
+P 8450 3500
+F 0 "#PWR0108" H 8450 3250 50  0001 C CNN
+F 1 "GND" H 8455 3327 50  0000 C CNN
+F 2 "" H 8450 3500 50  0001 C CNN
+F 3 "" H 8450 3500 50  0001 C CNN
+	1    8450 3500
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	8300 3500 8450 3500
+Text GLabel 5850 1500 2    50   Input ~ 0
+DAT
+Text GLabel 5850 1400 2    50   Input ~ 0
+CLK
+Wire Wire Line
+	5650 3150 5650 3450
 $EndSCHEMATC

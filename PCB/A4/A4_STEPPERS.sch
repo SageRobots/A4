@@ -735,7 +735,7 @@ F 3 "" H 8200 3050 50  0001 C CNN
 	1    0    0    -1  
 $EndComp
 Text GLabel 8250 2600 2    50   Input ~ 0
-ENC1
+ENC1A
 $Comp
 L power:+3V3 #PWR?
 U 1 1 60980A2B
