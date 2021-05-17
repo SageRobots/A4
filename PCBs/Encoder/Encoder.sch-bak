@@ -1,0 +1,134 @@
+EESchema Schematic File Version 4
+EELAYER 30 0
+EELAYER END
+$Descr A4 11693 8268
+encoding utf-8
+Sheet 1 1
+Title ""
+Date ""
+Rev ""
+Comp ""
+Comment1 ""
+Comment2 ""
+Comment3 ""
+Comment4 ""
+$EndDescr
+$Comp
+L Sensor_Magnetic:AS5047D U1
+U 1 1 60A1EC7B
+P 5700 3800
+F 0 "U1" H 5700 4481 50  0000 C CNN
+F 1 "AS5047D" H 5700 4390 50  0000 C CNN
+F 2 "Package_SO:TSSOP-14_4.4x5mm_P0.65mm" H 5700 3200 50  0001 C CNN
+F 3 "https://ams.com/documents/20143/36005/AS5047D_DS000394_2-00.pdf" H 4950 3250 50  0001 C CNN
+	1    5700 3800
+	1    0    0    -1  
+$EndComp
+$Comp
+L power:+3V3 #PWR03
+U 1 1 60A2031F
+P 4850 4000
+F 0 "#PWR03" H 4850 3850 50  0001 C CNN
+F 1 "+3V3" H 4865 4173 50  0000 C CNN
+F 2 "" H 4850 4000 50  0001 C CNN
+F 3 "" H 4850 4000 50  0001 C CNN
+	1    4850 4000
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	4850 4000 5200 4000
+$Comp
+L power:GND #PWR05
+U 1 1 60A20C38
+P 5700 4350
+F 0 "#PWR05" H 5700 4100 50  0001 C CNN
+F 1 "GND" H 5705 4177 50  0000 C CNN
+F 2 "" H 5700 4350 50  0001 C CNN
+F 3 "" H 5700 4350 50  0001 C CNN
+	1    5700 4350
+	1    0    0    -1  
+$EndComp
+$Comp
+L Device:C C1
+U 1 1 60A211CE
+P 4850 4150
+F 0 "C1" H 4965 4196 50  0000 L CNN
+F 1 "100nF" H 4965 4105 50  0000 L CNN
+F 2 "Capacitor_SMD:C_0805_2012Metric_Pad1.18x1.45mm_HandSolder" H 4888 4000 50  0001 C CNN
+F 3 "~" H 4850 4150 50  0001 C CNN
+	1    4850 4150
+	1    0    0    -1  
+$EndComp
+Connection ~ 4850 4000
+Wire Wire Line
+	5700 4300 5700 4350
+Wire Wire Line
+	5700 4350 4850 4350
+Wire Wire Line
+	4850 4350 4850 4300
+Connection ~ 5700 4350
+$Comp
+L power:+3V3 #PWR04
+U 1 1 60A228ED
+P 5400 3300
+F 0 "#PWR04" H 5400 3150 50  0001 C CNN
+F 1 "+3V3" H 5415 3473 50  0000 C CNN
+F 2 "" H 5400 3300 50  0001 C CNN
+F 3 "" H 5400 3300 50  0001 C CNN
+	1    5400 3300
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	5400 3300 5700 3300
+Text GLabel 5200 3500 0    50   Input ~ 0
+MOSI
+Text GLabel 5200 3600 0    50   Input ~ 0
+MISO
+Text GLabel 5200 3700 0    50   Input ~ 0
+CLK
+Text GLabel 5200 3800 0    50   Input ~ 0
+CS
+$Comp
+L power:+3V3 #PWR02
+U 1 1 60A24375
+P 4400 3450
+F 0 "#PWR02" H 4400 3300 50  0001 C CNN
+F 1 "+3V3" H 4415 3623 50  0000 C CNN
+F 2 "" H 4400 3450 50  0001 C CNN
+F 3 "" H 4400 3450 50  0001 C CNN
+	1    4400 3450
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	4400 3450 4050 3450
+Text GLabel 4050 3550 2    50   Input ~ 0
+MOSI
+Text GLabel 4050 3650 2    50   Input ~ 0
+MISO
+Text GLabel 4050 3750 2    50   Input ~ 0
+CLK
+Text GLabel 4050 3850 2    50   Input ~ 0
+CS
+$Comp
+L power:GND #PWR01
+U 1 1 60A24D56
+P 4050 3950
+F 0 "#PWR01" H 4050 3700 50  0001 C CNN
+F 1 "GND" H 4055 3777 50  0000 C CNN
+F 2 "" H 4050 3950 50  0001 C CNN
+F 3 "" H 4050 3950 50  0001 C CNN
+	1    4050 3950
+	1    0    0    -1  
+$EndComp
+$Comp
+L Connector:Conn_01x06_Male J1
+U 1 1 60A23B11
+P 3850 3650
+F 0 "J1" H 3958 4031 50  0000 C CNN
+F 1 "Conn_01x06_Male" H 3958 3940 50  0000 C CNN
+F 2 "Connector_PinHeader_2.00mm:PinHeader_2x03_P2.00mm_Vertical" H 3850 3650 50  0001 C CNN
+F 3 "~" H 3850 3650 50  0001 C CNN
+	1    3850 3650
+	1    0    0    -1  
+$EndComp
+$EndSCHEMATC
