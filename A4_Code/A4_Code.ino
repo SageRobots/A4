@@ -1,6 +1,6 @@
 #include "stepper.h"
-#include "communication.h"
 #include "gripper.h"
+#include "communication.h"
 
 unsigned long timeNow, timeWait;
 unsigned long timePrint, timePrevSpeed;
@@ -27,11 +27,11 @@ enum motionType {
 //create array of stepper class
 stepper steppers[4];
 
-//create com object
-com com(steppers);
-
 //create gripper object
-gripper gripper(11, 10, 23);
+gripper gripper(45, 44, 23);
+
+//create com object
+com com(steppers, &gripper);
 
 motionType motionType;
 
@@ -50,7 +50,10 @@ void setup() {
   steppers[1] = stepper(A1, 36, 52, 20, 17, 4, 1000, 200*4, 26+103.0/121.0);
   steppers[2] = stepper(A10, 35, 51, 19, A14, 24, 1000, 200*4, 26+103.0/121.0);
   steppers[3] = stepper(49, 34, 50, 18, 25, 29, 300, 200*4, 26+103.0/121.0);
-  
+//  steppers[0].disable();
+//  steppers[1].disable();
+//  steppers[2].disable();
+//  steppers[3].disable();
   //configure timer 1 as stepper driver input, CTC, no prescaler
   TCCR1A = 0;
   TCCR1B |= (1<<WGM12)|(1<<CS10);
@@ -109,7 +112,7 @@ void loop() {
   }
   
   //periodically print the position
-  if (timeNow - timePrint >= 2000) {
+  if (timeNow - timePrint >= 500) {
     com.printStatus();
     timePrint = timeNow;
   }
@@ -214,16 +217,21 @@ ISR(TIMER1_COMPA_vect) {
   //compute steps to target from current position
   for(int i=0; i<4; i++) {
     steppers[i].computeStepsToTarget();
+    if(abs(steppers[i].stepsToTarget) > 3) {
+      steppers[i].inPosition = false;
+//      Serial.println(i);
+//      Serial.println(steppers[i].stepsToTarget);
+    }
   }
   if ((steppers[0].inPosition | !steppers[0].enabled) 
     && (steppers[1].inPosition | !steppers[1].enabled) 
     && (steppers[2].inPosition | !steppers[2].enabled)
     && (steppers[3].inPosition | !steppers[3].enabled)) {
     busy = 0;
-    TIMSK1 = 0;
+//    TIMSK1 = 0;
     motionType = 0;
     com.setComplete();
-    Serial.println("complete1");
+//    Serial.println("\ncomplete1");
     return;
   }
   for(int i=0; i<4; i++) {
@@ -238,7 +246,6 @@ ISR(TIMER1_COMPA_vect) {
       return;
     }
   }
-
   //set direction 0
   for(int i=0; i<4; i++) {
     if (steppers[i].stepsToTarget < 0) {

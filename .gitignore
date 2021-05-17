@@ -1,2 +1,4 @@
 
 *.FCStd1
+electron-serialport/
+*.kicad_pcb-bak

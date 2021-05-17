@@ -1,7 +1,8 @@
 #include "communication.h"
 
-com::com(stepper _steppers[4]) {
+com::com(stepper _steppers[4], gripper* _gripper) {
   steppers = _steppers;
+  myGripper = _gripper;
   initializeBuffer();
 }
 
@@ -57,7 +58,7 @@ void com::parseLine(char* line) {
   uint8_t c;
   i=0;
   //set head data to default values
-  commandBuffer[head].gripperPow = 0;
+  commandBuffer[head].gripperPow = myGripper->power;
   commandBuffer[head].axisToHome = 9;
   commandBuffer[head].moveAxis[0] = 0;
   commandBuffer[head].moveAxis[1] = 0;
@@ -133,6 +134,8 @@ void com::printStatus() {
 	if(head != tail) {
 	  Serial.print("\nReady");
 	}
+  Serial.print("\nHome3: ");
+  Serial.print(digitalRead(steppers[3].pinHome));
 	Serial.print("\nPos: ");
 	for(int i=0; i<4; i++) {
 	  Serial.print(steppers[i].computePosition());

@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include "stepper.h"
+#include "gripper.h"
 
 class com {
 	public:
@@ -22,12 +23,13 @@ class com {
 
 		volatile uint32_t tooFast = 0;
 		stepper *steppers;
+    gripper *myGripper;
 
     float speedMax = 100;
     float accel = 100;
     bool execute=false;
 
-		com(stepper _steppers[4]);
+		com(stepper _steppers[4], gripper* _gripper);
     void initializeBuffer();
 		void readSerial();
 		void parseLine(char* line);

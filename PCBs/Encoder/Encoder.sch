@@ -101,9 +101,9 @@ F 3 "" H 4400 3450 50  0001 C CNN
 $EndComp
 Wire Wire Line
 	4400 3450 4050 3450
-Text GLabel 4050 3750 2    50   Input ~ 0
+Text GLabel 4050 3950 2    50   Input ~ 0
 MOSI
-Text GLabel 4050 3550 2    50   Input ~ 0
+Text GLabel 4050 3750 2    50   Input ~ 0
 MISO
 Text GLabel 4050 3650 2    50   Input ~ 0
 CLK
@@ -112,12 +112,12 @@ CS
 $Comp
 L power:GND #PWR01
 U 1 1 60A24D56
-P 4050 3950
-F 0 "#PWR01" H 4050 3700 50  0001 C CNN
-F 1 "GND" H 4055 3777 50  0000 C CNN
-F 2 "" H 4050 3950 50  0001 C CNN
-F 3 "" H 4050 3950 50  0001 C CNN
-	1    4050 3950
+P 4400 3550
+F 0 "#PWR01" H 4400 3300 50  0001 C CNN
+F 1 "GND" H 4405 3377 50  0000 C CNN
+F 2 "" H 4400 3550 50  0001 C CNN
+F 3 "" H 4400 3550 50  0001 C CNN
+	1    4400 3550
 	1    0    0    -1  
 $EndComp
 $Comp
@@ -131,4 +131,6 @@ F 3 "~" H 3850 3650 50  0001 C CNN
 	1    3850 3650
 	1    0    0    -1  
 $EndComp
+Wire Wire Line
+	4400 3550 4050 3550
 $EndSCHEMATC
