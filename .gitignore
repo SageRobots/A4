@@ -1,5 +1,6 @@
 
 *.FCStd1
-electron-serialport/
 *.kicad_pcb-bak
 *.sch-bak
+Code/Build/
+electron-serialport/
