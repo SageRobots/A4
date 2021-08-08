@@ -25,7 +25,7 @@
 #define TIMER_DIVIDER         16  //  Hardware timer clock divider
 #define TIMER_SCALE           (TIMER_BASE_CLK / TIMER_DIVIDER)  // convert counter value to s
 #define TIMER_INTERVAL0_S    0.0001 // sample test interval for the first timer
-#define TIMER_INTERVAL1_SEC 0.00005
+#define TIMER_INTERVAL1_S 0.00005
 static EventGroupHandle_t wifiEventGroup;
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
@@ -396,7 +396,7 @@ void IRAM_ATTR timer_0_isr(void *para)
     if(stepMaster | stepSlave) {
         //set timer 1 to reset step pins
         uint64_t timer_counter_value = timer_group_get_counter_value_in_isr(TIMER_GROUP_0, TIMER_1);
-        timer_counter_value += (uint64_t) (TIMER_INTERVAL1_SEC * TIMER_SCALE);
+        timer_counter_value += (uint64_t) (TIMER_INTERVAL1_S * TIMER_SCALE);
         timer_group_set_alarm_value_in_isr(TIMER_GROUP_0, TIMER_1, timer_counter_value);
         timer_group_enable_alarm_in_isr(TIMER_GROUP_0, TIMER_1);
     }
@@ -447,16 +447,44 @@ void motorInit(int i, int pinEn, int pinStep, int pinDir, float gearRatio) {
     motors[i].degPerStep = 1.0/motors[i].stepsPerDeg;
 }
 
-void csLow() {
-    gpio_set_level(pinCS0, 0);
+void csLow(int pinCS) {
+    gpio_set_level(pinCS, 0);
 }
 
-void csHigh() {
-    gpio_set_level(pinCS0, 1);
+void csHigh(int pinCS) {
+    gpio_set_level(pinCS, 1);
+}
+
+float getAngle(int pinCS) {
+    //get encoder angle
+    csLow(pinCS);
+    memset(&t, 0, sizeof(t));
+    t.length = 16;
+    // 0x3fff = 11111111111111, set 14 to 1 for read, set parity bit to 1
+    uint16_t cmd = 0x3fff|1<<14|1<<15;
+    t.tx_buffer = &cmd;
+    t.flags = SPI_TRANS_USE_RXDATA;
+    spi_device_transmit(spi, &t);
+    csHigh(pinCS);
+    //check parity
+    bool even = true;
+    for(int j=0; j<2; j++) {
+        for(int i=0; i<8; i++) {
+            if(t.rx_data[j] & 1<<i) even = !even;
+        }
+    }
+    if(even) {
+        uint16_t trim = 0b0011111111111111;
+        uint16_t angle = ((t.rx_data[0]<<8) + t.rx_data[1]) & trim;
+    }
+    return (float)angle/16383.0*360.0;
 }
 
 static void enc0_task(void *arg) {
-    //create enc0 SPI
+    //set CS pins high to start
+    csHigh(pinCS0);
+    csHigh(pinCS1);
+    //create SPI
     esp_err_t ret;
     spi_device_handle_t spi;
     spi_bus_config_t buscfg={
@@ -469,7 +497,7 @@ static void enc0_task(void *arg) {
     spi_device_interface_config_t devcfg={
         .clock_speed_hz=10000000,           //Clock out at 10 MHz
         .mode=1,                                //SPI mode 1
-        .spics_io_num=-1,               //CS pin manually implemented
+        .spics_io_num=-1,               //CS pins manually implemented
         .address_bits = 0,
         .command_bits = 0,
         .queue_size = 7
@@ -480,29 +508,12 @@ static void enc0_task(void *arg) {
     ESP_ERROR_CHECK(ret);
     spi_transaction_t t;
 
-    //get encoder angle
-    csLow();
-    memset(&t, 0, sizeof(t));
-    t.length = 16;
-    // 0x3fff = 11111111111111, set 14 to 1 for read, set parity bit to 1
-    uint16_t cmd = 0x3fff|1<<14|1<<15;
-    t.tx_buffer = &cmd;
-    t.flags = SPI_TRANS_USE_RXDATA;
-    spi_device_transmit(spi, &t);
-    csHigh();
-    //check parity
-    bool even = true;
-    for(int j=0; j<2; j++) {
-        for(int i=0; i<8; i++) {
-            if(t.rx_data[j] & 1<<i) even = !even;
-        }
+    while(1) {
+        motors[0].currentPos = getAngle(pinCS0);
+        motors[1].currentPos = getAngle(pinCS1);
+
+        vTaskDelay(10 / portTICK_RATE_MS);
     }
-    if(even) {
-        uint16_t trim = 0b0011111111111111;
-        uint16_t angle = ((t.rx_data[0]<<8) + t.rx_data[1]) & trim;
-        motors[0].currentPos = (float)angle/16383.0*360.0;
-    }
-    vTaskDelay(10 / portTICK_RATE_MS);
 }
 
 void app_main(void) {
@@ -552,7 +563,7 @@ void app_main(void) {
        (void *) TIMER_0, ESP_INTR_FLAG_IRAM, NULL);
     timer_start(TIMER_GROUP_0, TIMER_0);
 
-    tg0_timer_init(TIMER_1, 0, TIMER_INTERVAL1_SEC);
+    tg0_timer_init(TIMER_1, 0, TIMER_INTERVAL1_S);
     timer_isr_register(TIMER_GROUP_0, TIMER_1, timer_1_isr,
        (void *) TIMER_1, ESP_INTR_FLAG_IRAM, NULL);
     timer_start(TIMER_GROUP_0, TIMER_1);
