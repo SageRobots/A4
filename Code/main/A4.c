@@ -64,6 +64,7 @@ struct motor {
     float targetPos;
     float currentPos;
     float startPos;
+    float movePos;
     volatile int32_t currentSteps;
     volatile float accelFraction;
     int32_t targetSteps;
@@ -217,8 +218,8 @@ void planMove(float j0, float j1) {
         motors[i].accelFractionSet = false;
         gpio_set_level(motors[i].pinEn, 0);
     }
-    master = 0;
-    slave = 1;
+    m = 0;
+    s0 = 1;
     masterComplete = false;
     slaveComplete = false;
 }
@@ -455,8 +456,9 @@ void csHigh(int pinCS) {
     gpio_set_level(pinCS, 1);
 }
 
-float getAngle(int pinCS) {
+float getAngle(spi_device_handle_t spi, int pinCS) {
     //get encoder angle
+    spi_transaction_t t;
     csLow(pinCS);
     memset(&t, 0, sizeof(t));
     t.length = 16;
@@ -476,8 +478,11 @@ float getAngle(int pinCS) {
     if(even) {
         uint16_t trim = 0b0011111111111111;
         uint16_t angle = ((t.rx_data[0]<<8) + t.rx_data[1]) & trim;
+        return (float)angle/16383.0*360.0;
+    } else {
+        return 999;
     }
-    return (float)angle/16383.0*360.0;
+
 }
 
 static void enc0_task(void *arg) {
@@ -506,12 +511,16 @@ static void enc0_task(void *arg) {
     ESP_ERROR_CHECK(ret);
     ret=spi_bus_add_device(SPI2_HOST, &devcfg, &spi);
     ESP_ERROR_CHECK(ret);
-    spi_transaction_t t;
 
     while(1) {
-        motors[0].currentPos = getAngle(pinCS0);
-        motors[1].currentPos = getAngle(pinCS1);
-
+        float angle = getAngle(spi, pinCS0);
+        if(angle != 999) {
+            motors[0].currentPos = angle;
+        }
+        angle = getAngle(spi, pinCS1);
+        if(angle != 999) {
+            motors[1].currentPos = angle;
+        }
         vTaskDelay(10 / portTICK_RATE_MS);
     }
 }
@@ -588,7 +597,7 @@ void app_main(void) {
         // printf("motor1 stepsToTarget: %d\n", motors[1].stepsToTarget);
         // printf("motor0, 1, fraction: %.2f, %.2f\n", motors[0].fractionComplete, motors[1].fractionComplete);
 
-        printf("encoder 0 angle: %f\n", motors[0].currentPos);
+        printf("J0 %.1f\t J1 %.1f\n", motors[0].currentPos, motors[1].currentPos);
         vTaskDelay(1000 / portTICK_RATE_MS);
     }
 }
