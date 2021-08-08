@@ -87,12 +87,8 @@ bool newMove;
 struct motor motors[2];
 int m = 0, s0 = 1;
 
-float turnRadius = 0.22; //m
 float currentX = 0, currentY = 0, currentAngle = 0;
 float distance;
-
-int camPosSteps = 0;
-bool bCamComplete = false;
 
 static void event_handler(void* arg, esp_event_base_t event_base,
                                 int32_t event_id, void* event_data) {
@@ -194,14 +190,12 @@ static esp_err_t get_handler_2(httpd_req_t *req)
         char *result = (char *)malloc(len + 1);
         snprintf(result, len + 1, "%.2f", battery);
         httpd_resp_sendstr(req, result);
-        printf("Battery: %.2f\n", battery);
     } else if (!strcmp(req->uri,"/pos")) {
         //return the battery voltage
-        int len = snprintf(NULL, 0, "%.2f, %.2f, %.2f", currentX, currentY, currentAngle);
+        int len = snprintf(NULL, 0, "%.2f", motors[0].currentPos);
         char *result = (char *)malloc(len + 1);
-        snprintf(result, len + 1, "%.2f, %.2f, %.2f", currentX, currentY, currentAngle);
+        snprintf(result, len + 1, "%.2f", motors[0].currentPos);
         httpd_resp_sendstr(req, result);
-        printf("Position: %.2f, %.2f, %.2f\n", currentX, currentY, currentAngle);
     } else {
         printf("URI: ");
         printf(req->uri);
@@ -211,14 +205,28 @@ static esp_err_t get_handler_2(httpd_req_t *req)
     return ESP_OK;
 }
 
-void planMove(float x, float y) {
-
+void planMove(float j0, float j1) {
+    motors[0].targetPos = j0;
+    motors[1].targetPos = j1;
+    for (int i = 0; i < 2; i++) {
+        motors[i].accelFraction = 0.5;
+        motors[i].startPos = motors[i].currentPos;
+        motors[i].movePos = motors[i].targetPos - motors[i].currentPos;
+        motors[i].targetSpeed = speedMin;
+        motors[i].stepInterval = 100;
+        motors[i].accelFractionSet = false;
+        gpio_set_level(motors[i].pinEn, 0);
+    }
+    master = 0;
+    slave = 1;
+    masterComplete = false;
+    slaveComplete = false;
 }
 
 static esp_err_t get_handler_move(httpd_req_t *req) {
     char*  buf;
     size_t buf_len;
-    float x = 0, y = 0;
+    float j0 = 0, j1 = 0;
     /* Read URL query string length and allocate memory for length + 1,
     * extra byte for null termination */
     buf_len = httpd_req_get_url_query_len(req) + 1;
@@ -227,15 +235,15 @@ static esp_err_t get_handler_move(httpd_req_t *req) {
         if (httpd_req_get_url_query_str(req, buf, buf_len) == ESP_OK) {
             char param[32];
             /* Get value of expected key from query string */
-            if (httpd_query_key_value(buf, "x", param, sizeof(param)) == ESP_OK) {
-                ESP_LOGI(TAG, "Found URL query parameter => x=%s", param);
-                x = atof(param);
+            if (httpd_query_key_value(buf, "j0", param, sizeof(param)) == ESP_OK) {
+                ESP_LOGI(TAG, "Found URL query parameter => j0=%s", param);
+                j0 = atof(param);
             }
-            if (httpd_query_key_value(buf, "y", param, sizeof(param)) == ESP_OK) {
-                ESP_LOGI(TAG, "Found URL query parameter => y=%s", param);
-                y = atof(param);
+            if (httpd_query_key_value(buf, "j1", param, sizeof(param)) == ESP_OK) {
+                ESP_LOGI(TAG, "Found URL query parameter => j1=%s", param);
+                j1 = atof(param);
             }
-            planMove(x, y);
+            planMove(j0, j1);
         }
         free(buf);
     }
