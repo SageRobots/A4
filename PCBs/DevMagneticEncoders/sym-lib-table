@@ -1,3 +1,5 @@
 (sym_lib_table
   (lib (name A4)(type Legacy)(uri C:/Projects/A4/PCBs/A4.lib)(options "")(descr ""))
+  (lib (name V3-rescue)(type Legacy)(uri C:/Projects/V3/PCB/V3/V3-rescue.lib)(options "")(descr ""))
+  (lib (name BoilerBot)(type Legacy)(uri C:/Projects/BoilerBot/PCBs/BoilerBot.lib)(options "")(descr ""))
 )

@@ -1344,4 +1344,23 @@ Text GLabel 5850 1400 2    50   Input ~ 0
 CLK
 Wire Wire Line
 	5650 3150 5650 3450
+$Comp
+L Connector:Screw_Terminal_01x02 J?
+U 1 1 6110BFC1
+P 1700 1500
+F 0 "J?" H 1780 1492 50  0000 L CNN
+F 1 "Screw_Terminal_01x02" H 1780 1401 50  0000 L CNN
+F 2 "TerminalBlock_Phoenix:TerminalBlock_Phoenix_MKDS-1,5-2_1x02_P5.00mm_Horizontal" H 1700 1500 50  0001 C CNN
+F 3 "~" H 1700 1500 50  0001 C CNN
+	1    1700 1500
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	1150 1500 1500 1500
+Connection ~ 1150 1500
+Wire Wire Line
+	1500 1600 1500 2100
+Wire Wire Line
+	1500 2100 1150 2100
+Connection ~ 1150 2100
 $EndSCHEMATC

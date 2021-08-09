@@ -1,4 +1,4 @@
-19838859161681517
+19838863822341130
 A4
 CK_PTS647_4.5x4.5
 
@@ -20,6 +20,13 @@ TE-1775469-6
 0
 8
 7
+A4
+TL3305AF160QG
+
+
+0
+4
+4
 Battery
 BatteryHolder_Bulgin_BX0036_1xC
 Bulgin Battery Holder, BX0036, Battery Type C (https://www.bulgin.com/products/pub/media/bulgin/data/Battery_holders.pdf)
@@ -82277,13 +82284,6 @@ transformer flyback
 0
 10
 10
-V3
-ESP32-S2-WROOM
-
-
-0
-63
-43
 Valve
 Valve_ECC-83-1
 Valve ECC-83-1 round pins

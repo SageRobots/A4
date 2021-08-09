@@ -968,9 +968,9 @@ Text GLabel 5450 3150 3    50   Input ~ 0
 STEP1
 Text GLabel 8300 4200 2    50   Input ~ 0
 EN1
-Text GLabel 5250 3150 3    50   Input ~ 0
-DIR2
 Text GLabel 4950 3150 3    50   Input ~ 0
+DIR2
+Text GLabel 5250 3150 3    50   Input ~ 0
 STEP2
 Text GLabel 7600 4300 0    50   Input ~ 0
 EN2
