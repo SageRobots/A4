@@ -2143,4 +2143,56 @@ Text GLabel 6200 2700 2    50   Input ~ 0
 MOT1
 Wire Wire Line
 	6200 1800 6550 1800
+$Comp
+L Connector:Conn_01x04_Male J19
+U 1 1 6113B222
+P 2400 2350
+AR Path="/6113B222" Ref="J19"  Part="1" 
+AR Path="/6090A275/6113B222" Ref="J?"  Part="1" 
+AR Path="/60A3186D/6090A275/6113B222" Ref="J?"  Part="1" 
+F 0 "J19" H 2508 2631 50  0000 C CNN
+F 1 "Conn_01x04_Male" H 2508 2540 50  0000 C CNN
+F 2 "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical" H 2400 2350 50  0001 C CNN
+F 3 "~" H 2400 2350 50  0001 C CNN
+	1    2400 2350
+	1    0    0    -1  
+$EndComp
+$Comp
+L power:+3V3 #PWR?
+U 1 1 6113C85F
+P 2950 2250
+AR Path="/60A3186D/6113C85F" Ref="#PWR?"  Part="1" 
+AR Path="/6113C85F" Ref="#PWR060"  Part="1" 
+F 0 "#PWR060" H 2950 2100 50  0001 C CNN
+F 1 "+3V3" H 2965 2423 50  0000 C CNN
+F 2 "" H 2950 2250 50  0001 C CNN
+F 3 "" H 2950 2250 50  0001 C CNN
+	1    2950 2250
+	1    0    0    -1  
+$EndComp
+$Comp
+L power:GND #PWR?
+U 1 1 6113D113
+P 3100 2350
+AR Path="/60A3186D/6113D113" Ref="#PWR?"  Part="1" 
+AR Path="/6113D113" Ref="#PWR061"  Part="1" 
+F 0 "#PWR061" H 3100 2100 50  0001 C CNN
+F 1 "GND" H 3105 2177 50  0000 C CNN
+F 2 "" H 3100 2350 50  0001 C CNN
+F 3 "" H 3100 2350 50  0001 C CNN
+	1    3100 2350
+	1    0    0    -1  
+$EndComp
+Text GLabel 4900 2200 0    50   Input ~ 0
+LC_CLK
+Text GLabel 4900 2300 0    50   Input ~ 0
+LC_DAT
+Text GLabel 2600 2450 2    50   Input ~ 0
+LC_CLK
+Text GLabel 2600 2550 2    50   Input ~ 0
+LC_DAT
+Wire Wire Line
+	2600 2250 2950 2250
+Wire Wire Line
+	3100 2350 2600 2350
 $EndSCHEMATC
