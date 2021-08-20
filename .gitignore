@@ -4,3 +4,4 @@
 *.sch-bak
 Code/Build/
 electron-serialport/
+*.FCStd1
