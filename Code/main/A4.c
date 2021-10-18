@@ -37,26 +37,44 @@ static const adc_atten_t atten = ADC_ATTEN_11db;
 
 const int pinDir1 = 1;
 const int pinStep1 = 2;
-const int pinEn1 = 3;
+const int pinLCClk = 3;
+const int pinLCDat = 4;
+const int pinEn3 = 8;
+const int pinDir2 = 9;
+const int pinStep2 = 10;
+const int pinEn2 = 11;
+const int pinEn1 = 12;
+//const int pinCharge = 13;
 const int pinDir0 = 14;
 const int pinStep0 = 15;
 const int pinEn0 = 16;
-const int pinMosi = 19;
-const int pinCS1 = 20;
-const int pinMiso = 21;
-const int pinClk = 26;
-const int pinCS0 = 33;
+const int pinDAC1 = 17;
+const int pinStep3 = 19;
+const int pinDir3 = 20;
+const int pinEn4 = 21;
+const int pinStep4 = 26;
+const int pinDir4 = 33;
+const int pinCS4 = 34;
+const int pinClk = 35;
+const int pinCS3 = 36;
+const int pinMosi = 37;
+const int pinMot1 = 38;
+const int pinMot2 = 39;
+const int pinMiso = 40;
+const int pinCS2 = 41;
+const int pinCS1 = 42;
+const int pinCS0 = 45;
 
-const int pinCharge = ADC2_CHANNEL_6;
+const int pinCharge = ADC2_CHANNEL_2;
 
 int64_t timeNow = 0;
 int64_t timeSample = 0;
 int64_t timePrev = 0;
 float battery = 12.0;
 
-const float speedMax = 0.3/5.0; // m/s
-const float speedMin = 0.01; 
-const float accel = 0.3*(TIMER_INTERVAL0_S); // m/s
+const float speedMax = 3000.0/27.0; // deg/s
+const float speedMin = 6.0/27.0; // deg/s
+const float accel = 60.0/27.0; // deg/s2
 
 struct motor {
     float stepsPerDeg;
@@ -82,14 +100,13 @@ struct motor {
 };
 
 volatile int intr_count = 0;
+volatile int intr_count1 = 0;
 volatile bool masterComplete, slaveComplete;
 bool newMove;
 
 struct motor motors[2];
 int m = 0, s0 = 1;
-
-float currentX = 0, currentY = 0, currentAngle = 0;
-float distance;
+bool robotEnabled = false;
 
 static void event_handler(void* arg, esp_event_base_t event_base,
                                 int32_t event_id, void* event_data) {
@@ -192,7 +209,6 @@ static esp_err_t get_handler_2(httpd_req_t *req)
         snprintf(result, len + 1, "%.2f", battery);
         httpd_resp_sendstr(req, result);
     } else if (!strcmp(req->uri,"/pos")) {
-        //return the battery voltage
         int len = snprintf(NULL, 0, "%.2f", motors[0].currentPos);
         char *result = (char *)malloc(len + 1);
         snprintf(result, len + 1, "%.2f", motors[0].currentPos);
@@ -202,7 +218,6 @@ static esp_err_t get_handler_2(httpd_req_t *req)
         printf(req->uri);
         printf("\n");
     }
-
     return ESP_OK;
 }
 
@@ -222,6 +237,10 @@ void planMove(float j0, float j1) {
     s0 = 1;
     masterComplete = false;
     slaveComplete = false;
+    if(!robotEnabled) {
+        timer_start(TIMER_GROUP_0, TIMER_0);
+        robotEnabled = true;
+    }
 }
 
 static esp_err_t get_handler_move(httpd_req_t *req) {
@@ -239,10 +258,14 @@ static esp_err_t get_handler_move(httpd_req_t *req) {
             if (httpd_query_key_value(buf, "j0", param, sizeof(param)) == ESP_OK) {
                 ESP_LOGI(TAG, "Found URL query parameter => j0=%s", param);
                 j0 = atof(param);
+            } else {
+                j0 = motors[0].currentPos;
             }
             if (httpd_query_key_value(buf, "j1", param, sizeof(param)) == ESP_OK) {
                 ESP_LOGI(TAG, "Found URL query parameter => j1=%s", param);
                 j1 = atof(param);
+            } else {
+                j1 = motors[1].currentPos;
             }
             planMove(j0, j1);
         }
@@ -251,15 +274,7 @@ static esp_err_t get_handler_move(httpd_req_t *req) {
     return ESP_OK;
 }
 
-static const httpd_uri_t get_uri_1 = {
-    .uri       = "/",
-    .method    = HTTP_GET,
-    .handler   = get_handler,
-    .user_ctx  = NULL
-};
-
-static httpd_handle_t start_webserver(void)
-{
+static httpd_handle_t start_webserver(void) {
     httpd_handle_t server = NULL;
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.uri_match_fn = httpd_uri_match_wildcard;
@@ -273,6 +288,12 @@ static httpd_handle_t start_webserver(void)
             .user_ctx  = NULL   // Pass server data as context
         };
         httpd_register_uri_handler(server, &move_uri);
+        httpd_uri_t get_uri_1 = {
+            .uri       = "/",
+            .method    = HTTP_GET,
+            .handler   = get_handler,
+            .user_ctx  = NULL
+        };
         httpd_register_uri_handler(server, &get_uri_1);
         /* URI handler for getting uploaded files */
         httpd_uri_t file_download = {
@@ -289,8 +310,7 @@ static httpd_handle_t start_webserver(void)
     return NULL;
 }
 
-static void stop_webserver(httpd_handle_t server)
-{
+static void stop_webserver(httpd_handle_t server) {
     // Stop the httpd server
     httpd_stop(server);
 }
@@ -307,8 +327,7 @@ static void disconnect_handler(void* arg, esp_event_base_t event_base,
 }
 
 static void connect_handler(void* arg, esp_event_base_t event_base, 
-                            int32_t event_id, void* event_data)
-{
+                            int32_t event_id, void* event_data) {
     httpd_handle_t* server = (httpd_handle_t*) arg;
     if (*server == NULL) {
         ESP_LOGI(TAG, "Starting webserver");
@@ -322,6 +341,7 @@ void IRAM_ATTR timer_0_isr(void *para)
     bool stepMaster = false;
     bool stepSlave = false;
     intr_count++;
+    intr_count1++;
     motors[m].numer = abs(motors[m].currentPos-motors[m].startPos)*motors[m].stepsPerDeg+(float)intr_count/motors[m].stepInterval;
     motors[m].denom = (float)motors[m].moveSteps;
     if(motors[m].denom == 0) {
@@ -334,7 +354,7 @@ void IRAM_ATTR timer_0_isr(void *para)
         //compute steps to target
         motors[m].stepsToTarget = round((motors[m].targetPos - motors[m].currentPos)*motors[m].stepsPerDeg);
         
-        if(motors[m].stepsToTarget != 0) {
+        if(abs(motors[m].stepsToTarget) >= 1.0*motors[m].stepsPerDeg) {
             //set direction
             if(motors[m].stepsToTarget > 0) {
                 gpio_set_level(motors[m].pinDir, 0);
@@ -360,12 +380,15 @@ void IRAM_ATTR timer_0_isr(void *para)
                 }
             }
             //compute time per step for target speed
-            motors[m].stepInterval = 10000.0/motors[m].targetSpeed*motors[m].degPerStep; // ms/s s/deg deg/step
+            motors[m].stepInterval = 10000.0/motors[m].targetSpeed*motors[m].degPerStep; // intervals/s s/deg deg/step
+            motors[m].stepInterval = 20;
             if(motors[m].stepInterval > 100) motors[m].stepInterval = 100; 
+            if(motors[m].stepInterval < 4) motors[m].stepInterval = 50;
             stepMaster = true;           
         } else {
-            gpio_set_level(motors[m].pinEn, 1);
+            // gpio_set_level(motors[m].pinEn, 1);
             masterComplete = true;
+
         }
     }
 
@@ -378,17 +401,20 @@ void IRAM_ATTR timer_0_isr(void *para)
     }
 
     motors[s0].stepsToTarget = (motors[s0].targetPos - motors[s0].currentPos)*motors[s0].stepsPerDeg;
-    if(motors[s0].fractionComplete <= motors[m].fractionComplete) {
-        stepSlave = true;
+    if(motors[s0].fractionComplete <= motors[m].fractionComplete && abs(motors[s0].stepsToTarget) > motors[s0].stepsPerDeg) {
+        if(intr_count1 >= 20) {
+            stepSlave = true;
+            intr_count1 = 0;            
+        }
         if(motors[s0].stepsToTarget > 0) {
-            gpio_set_level(motors[s0].pinDir, 1);
-        } else {
             gpio_set_level(motors[s0].pinDir, 0);
+        } else {
+            gpio_set_level(motors[s0].pinDir, 1);
         }
     }
 
     if(motors[s0].stepsToTarget == 0) {
-        gpio_set_level(motors[s0].pinEn, 1);
+        // gpio_set_level(motors[s0].pinEn, 1);
         slaveComplete = true;
     }
 
@@ -558,6 +584,8 @@ void app_main(void) {
     io_conf.pull_up_en = 0;
     //configure GPIO with the given settings
     gpio_config(&io_conf);
+    gpio_set_level(pinEn0, 1);
+    gpio_set_level(pinEn1, 1);
 
     //configure ADC
     adc2_config_channel_atten((adc2_channel_t)pinCharge, atten);
@@ -570,7 +598,6 @@ void app_main(void) {
     tg0_timer_init(TIMER_0, 1, 0.0001);
     timer_isr_register(TIMER_GROUP_0, TIMER_0, timer_0_isr,
        (void *) TIMER_0, ESP_INTR_FLAG_IRAM, NULL);
-    timer_start(TIMER_GROUP_0, TIMER_0);
 
     tg0_timer_init(TIMER_1, 0, TIMER_INTERVAL1_S);
     timer_isr_register(TIMER_GROUP_0, TIMER_1, timer_1_isr,
@@ -578,8 +605,6 @@ void app_main(void) {
     timer_start(TIMER_GROUP_0, TIMER_1);
 
     xTaskCreate(enc0_task, "enc0_task", 1024*2, NULL, configMAX_PRIORITIES, NULL);
-
-
 
     while(1) {
         uint32_t adc_reading = 0;

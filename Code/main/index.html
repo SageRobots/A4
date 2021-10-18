@@ -3,20 +3,14 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>V3 Robot Vehicle</title>
+	<title>A4 Robot Arm</title>
 </head>
 <body>
-	<h1>V3 Controls</h1>
+	<h1>A4 Controls</h1>
 	<label for="inp-move-relative">Vector:</label>
   <input type="text" id="inp-move-relative" name="inp-move-relative"><br>
 	<button type="button" id="btn-move-relative">Move</button>
 
-	<label for="inp-gains">Gains:</label>
-	<input type="text" id="inp-gains" name="inp-gains"><br>
-	<button type="button" id="btn-set-gains">Set Kp</button>
-
-	<button type="button" id="btn-pump-on">Pump On</button>
-	<button type="button" id="btn-pump-off">Pump Off</button>
 	<p id="p1"></p>
 	<p id="p-battery"></p>
 	<p id="p-pos"></p>
@@ -25,20 +19,11 @@
 
 <script>
 	var p1 = document.getElementById("p1");
-	var btnPumpOn = document.getElementById('btn-pump-on');
-	var btnPumpOff = document.getElementById('btn-pump-off');
 	var btnMoveRelative = document.getElementById('btn-move-relative');
-	var btnSetGains = document.getElementById('btn-set-gains');
 	var xhttp = new XMLHttpRequest();
-	var xhttpPump = new XMLHttpRequest();
   var xhttpBattery = new XMLHttpRequest();
   var xhttpPos = new XMLHttpRequest();
   var xhttpMoveRelative = new XMLHttpRequest();
-  var xhttpGains = new XMLHttpRequest();
-	var wDown = false;
-	var aDown = false;
-	var sDown = false;
-	var dDown = false;
 
 	btnMoveRelative.onclick = function() {
 		//parse the three values
@@ -48,58 +33,6 @@
 		console.log("getQuery: " + getQuery);
 		xhttpMoveRelative.open('GET', getQuery, true);
 		xhttpMoveRelative.send();
-	};
-
-	btnSetGains.onclick = function() {
-		//parse the three values
-		var getQuery = 'setGains?'
-		var raw = document.getElementById('inp-gains').value;
-		getQuery += raw;
-		console.log("getQuery: " + getQuery);
-		xhttpGains.open('GET', getQuery, true);
-		xhttpGains.send();
-	};
-
-	document.onkeydown = function(e) {
-		if(e.key == 'w') {
-			if(!wDown) {
-				wDown = true;
-				p1.innerHTML = "Forward";
-				xhttp.open("GET", "forward", true);
-  			xhttp.send();
-  		}
-		} else if (e.key == 'a') {
-			if(!aDown) {
-				aDown = true;
-				p1.innerHTML = "Left";
-				xhttp.open("GET", "left", true);
-				xhttp.send();
-			}
-		} else if (e.key == 's') {
-			if(!sDown) {
-				sDown = true;
-				p1.innerHTML = "Reverse";
-				xhttp.open("GET", "reverse", true);
-				xhttp.send();
-			}
-		} else if (e.key == 'd') {
-			if(!dDown) {
-				dDown = true
-				p1.innerHTML = "Right";
-				xhttp.open("GET", "right", true);
-				xhttp.send();
-			}
-		}
-	};
-
-	btnPumpOn.onclick = function() {
-		xhttpPump.open('GET', 'pumpOn', true);
-		xhttpPump.send();
-	};
-
-	btnPumpOff.onclick = function() {
-		xhttpPump.open('GET', 'pumpOff', true);
-		xhttpPump.send();
 	};
 
 	//request battery periodically
