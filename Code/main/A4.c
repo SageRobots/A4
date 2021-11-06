@@ -24,7 +24,7 @@
 #define DEFAULT_VREF    1100        //Use adc2_vref_to_gpio() to obtain a better estimate
 #define TIMER_DIVIDER         16  //  Hardware timer clock divider
 #define TIMER_SCALE           (TIMER_BASE_CLK / TIMER_DIVIDER)  // convert counter value to s
-#define TIMER_INTERVAL0_S    0.0001 // sample test interval for the first timer
+#define TIMER_INTERVAL0_S    0.0002 // sample test interval for the first timer
 #define TIMER_INTERVAL1_S 0.00005
 static EventGroupHandle_t wifiEventGroup;
 #define WIFI_CONNECTED_BIT BIT0
@@ -65,6 +65,11 @@ const int pinCS2 = 41;
 const int pinCS1 = 42;
 const int pinCS0 = 45;
 
+const bool enableJ0 = true;
+const bool enableJ1 = false;
+const bool enableJ2 = false;
+const bool enableJ3 = false;
+
 const int pinCharge = ADC2_CHANNEL_2;
 
 int64_t timeNow = 0;
@@ -101,11 +106,12 @@ struct motor {
 
 volatile int intr_count = 0;
 volatile int intr_count1 = 0;
+volatile int intr_count2 = 0;
 volatile bool masterComplete, slaveComplete;
 bool newMove;
 
-struct motor motors[2];
-int m = 0, s0 = 1;
+struct motor motors[3];
+int m = 0, s0 = 1, s1 = 2;
 bool robotEnabled = false;
 
 static void event_handler(void* arg, esp_event_base_t event_base,
@@ -188,8 +194,7 @@ void wifiInit(void) {
     vEventGroupDelete(wifiEventGroup);
 }
 
-static esp_err_t get_handler(httpd_req_t *req)
-{
+static esp_err_t get_handler(httpd_req_t *req) {
     extern const unsigned char index_html_start[] asm("_binary_index_html_start");
     extern const unsigned char index_html_end[]   asm("_binary_index_html_end");
     const size_t index_html_size = (index_html_end - index_html_start);
@@ -200,8 +205,7 @@ static esp_err_t get_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-static esp_err_t get_handler_2(httpd_req_t *req)
-{
+static esp_err_t get_handler_2(httpd_req_t *req) {
     if (!strcmp(req->uri,"/battery")) {
         //return the battery voltage
         int len = snprintf(NULL, 0, "%.2f", battery);
@@ -221,10 +225,11 @@ static esp_err_t get_handler_2(httpd_req_t *req)
     return ESP_OK;
 }
 
-void planMove(float j0, float j1) {
+void planMove(float j0, float j1, float j2) {
     motors[0].targetPos = j0;
     motors[1].targetPos = j1;
-    for (int i = 0; i < 2; i++) {
+    motors[2].targetPos = j2;
+    for (int i = 0; i < 3; i++) {
         motors[i].accelFraction = 0.5;
         motors[i].startPos = motors[i].currentPos;
         motors[i].movePos = motors[i].targetPos - motors[i].currentPos;
@@ -233,10 +238,21 @@ void planMove(float j0, float j1) {
         motors[i].accelFractionSet = false;
         gpio_set_level(motors[i].pinEn, 0);
     }
-    m = 0;
-    s0 = 1;
-    masterComplete = false;
-    slaveComplete = false;
+
+    if(abs(motors[0].movePos) > abs(motors[1].movePos) && abs(motors[0].movePos) > abs(motors[2].movePos)) {
+        m = 0;
+        s0 = 1;
+        s1 = 2;
+    } else if (abs(motors[1].movePos) > abs(motors[2].movePos)) {
+        m = 1;
+        s0 = 0;
+        s1 = 2;
+    } else {
+        m = 2;
+        s0 = 0;
+        s1 = 1;
+    }
+
     if(!robotEnabled) {
         timer_start(TIMER_GROUP_0, TIMER_0);
         robotEnabled = true;
@@ -246,7 +262,9 @@ void planMove(float j0, float j1) {
 static esp_err_t get_handler_move(httpd_req_t *req) {
     char*  buf;
     size_t buf_len;
-    float j0 = 0, j1 = 0;
+    float j0 = motors[0].currentPos;
+    float j1 = motors[1].currentPos;
+    float j2 = motors[2].currentPos;
     /* Read URL query string length and allocate memory for length + 1,
     * extra byte for null termination */
     buf_len = httpd_req_get_url_query_len(req) + 1;
@@ -257,17 +275,17 @@ static esp_err_t get_handler_move(httpd_req_t *req) {
             /* Get value of expected key from query string */
             if (httpd_query_key_value(buf, "j0", param, sizeof(param)) == ESP_OK) {
                 ESP_LOGI(TAG, "Found URL query parameter => j0=%s", param);
-                j0 = atof(param);
-            } else {
-                j0 = motors[0].currentPos;
+                if(enableJ0) j0 = atof(param);
             }
             if (httpd_query_key_value(buf, "j1", param, sizeof(param)) == ESP_OK) {
                 ESP_LOGI(TAG, "Found URL query parameter => j1=%s", param);
-                j1 = atof(param);
-            } else {
-                j1 = motors[1].currentPos;
+                if(enableJ1) j1 = atof(param);
             }
-            planMove(j0, j1);
+            if (httpd_query_key_value(buf, "j2", param, sizeof(param)) == ESP_OK) {
+                ESP_LOGI(TAG, "Found URL query parameter => j2=%s", param);
+                if(enableJ2) j2 = atof(param);
+            }
+            planMove(j0, j1, j2);
         }
         free(buf);
     }
@@ -316,8 +334,7 @@ static void stop_webserver(httpd_handle_t server) {
 }
 
 static void disconnect_handler(void* arg, esp_event_base_t event_base, 
-                               int32_t event_id, void* event_data)
-{
+                               int32_t event_id, void* event_data) {
     httpd_handle_t* server = (httpd_handle_t*) arg;
     if (*server) {
         ESP_LOGI(TAG, "Stopping webserver");
@@ -342,6 +359,7 @@ void IRAM_ATTR timer_0_isr(void *para)
     bool stepSlave = false;
     intr_count++;
     intr_count1++;
+    intr_count2++;
     motors[m].numer = abs(motors[m].currentPos-motors[m].startPos)*motors[m].stepsPerDeg+(float)intr_count/motors[m].stepInterval;
     motors[m].denom = (float)motors[m].moveSteps;
     if(motors[m].denom == 0) {
@@ -443,8 +461,7 @@ void IRAM_ATTR timer_1_isr(void *para)
 }
 
 static void tg0_timer_init(int timer_idx,
-                                   bool auto_reload, double timer_interval_ms)
-{
+                                   bool auto_reload, double timer_interval_ms) {
     /* Select and initialize basic parameters of the timer */
     timer_config_t config = {
         .divider = TIMER_DIVIDER,
@@ -539,14 +556,49 @@ static void enc0_task(void *arg) {
     ESP_ERROR_CHECK(ret);
 
     while(1) {
-        float angle = getAngle(spi, pinCS0);
-        if(angle != 999) {
-            motors[0].currentPos = angle;
+        float angle;
+        if(enableJ0) {
+            angle = getAngle(spi, pinCS0);
+            if(angle != 999) {
+                if(abs(motors[0].currentPos - angle) > 10) {
+                    motors[0].currentPos = 0.8*motors[0].currentPos + 0.2*angle;
+                } else {
+                    motors[0].currentPos = angle;
+                }
+            }
+        } else {
+            motors[0].currentPos = 0;
+            motors[0].targetPos = 0;
         }
-        angle = getAngle(spi, pinCS1);
-        if(angle != 999) {
-            motors[1].currentPos = angle;
+
+        if(enableJ1) {
+            angle = getAngle(spi, pinCS1);
+            if(angle != 999) {
+                if(abs(motors[1].currentPos - angle) > 10) {
+                    motors[1].currentPos = 0.8*motors[1].currentPos + 0.2*angle;
+                } else {
+                    motors[1].currentPos = angle;
+                }
+            }
+        } else {
+            motors[1].currentPos = 0;
+            motors[1].targetPos = 0;
         }
+
+        if(enableJ2) {
+            angle = getAngle(spi, pinCS2);
+            if(angle != 999) {
+                if(abs(motors[2].currentPos - angle) > 10) {
+                    motors[2].currentPos = 0.8*motors[2].currentPos + 0.2*angle;
+                } else {
+                    motors[2].currentPos = angle;
+                }
+            }
+        } else {
+            motors[2].currentPos = 0;
+            motors[2].targetPos = 0;
+        }
+
         vTaskDelay(10 / portTICK_RATE_MS);
     }
 }
@@ -576,8 +628,9 @@ void app_main(void) {
     //set as output mode
     io_conf.mode = GPIO_MODE_INPUT_OUTPUT;
     //bit mask of the pins that you want to set
-    io_conf.pin_bit_mask = 1ULL<<pinDir0|1ULL<<pinStep0|1ULL<<pinEn0|1ULL<<pinDir1|1ULL<<pinStep1
-        |1ULL<<pinEn1|1ULL<<pinCS0|1ULL<<pinCS1;
+    io_conf.pin_bit_mask = 1ULL<<pinDir0|1ULL<<pinStep0|1ULL<<pinEn0|1ULL<<pinCS0;
+    io_conf.pin_bit_mask |= 1ULL<<pinDir1|1ULL<<pinStep1|1ULL<<pinEn1|1ULL<<pinCS1;
+    io_conf.pin_bit_mask |= 1ULL<<pinDir2|1ULL<<pinStep2|1ULL<<pinEn2|1ULL<<pinCS2;
     //disable pull-down mode
     io_conf.pull_down_en = 0;
     //disable pull-up mode
@@ -586,6 +639,7 @@ void app_main(void) {
     gpio_config(&io_conf);
     gpio_set_level(pinEn0, 1);
     gpio_set_level(pinEn1, 1);
+    gpio_set_level(pinEn2, 1);
 
     //configure ADC
     adc2_config_channel_atten((adc2_channel_t)pinCharge, atten);
@@ -594,8 +648,9 @@ void app_main(void) {
 
     motorInit(0, pinEn0, pinStep0, pinDir0, 26.0+103.0/121.0);
     motorInit(1, pinEn1, pinStep1, pinDir1, 26.0+103.0/121.0);
+    motorInit(2, pinEn2, pinStep2, pinDir2, 26.0+103.0/121.0);
 
-    tg0_timer_init(TIMER_0, 1, 0.0001);
+    tg0_timer_init(TIMER_0, 1, TIMER_INTERVAL0_S);
     timer_isr_register(TIMER_GROUP_0, TIMER_0, timer_0_isr,
        (void *) TIMER_0, ESP_INTR_FLAG_IRAM, NULL);
 
@@ -622,7 +677,7 @@ void app_main(void) {
         // printf("motor1 stepsToTarget: %d\n", motors[1].stepsToTarget);
         // printf("motor0, 1, fraction: %.2f, %.2f\n", motors[0].fractionComplete, motors[1].fractionComplete);
 
-        printf("J0 %.1f\t J1 %.1f\n", motors[0].currentPos, motors[1].currentPos);
+        printf("J0 %.1f\t J1 %.1f\t J2 %.1f\n", motors[0].currentPos, motors[1].currentPos, motors[2].currentPos);
         vTaskDelay(1000 / portTICK_RATE_MS);
     }
 }
