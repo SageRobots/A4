@@ -77,9 +77,9 @@ int64_t timeSample = 0;
 int64_t timePrev = 0;
 float battery = 12.0;
 
-const float speedMax = 3000.0/27.0; // deg/s
-const float speedMin = 6.0/27.0; // deg/s
-const float accel = 60.0/27.0; // deg/s2
+const float speedMin = 12.0/27.0; // deg/s
+const float accel = 360.0/27.0; // deg/s2
+const int minStepInterval = 20;
 
 struct motor {
     float stepsPerDeg;
@@ -233,8 +233,9 @@ void planMove(float j0, float j1, float j2) {
         motors[i].accelFraction = 0.5;
         motors[i].startPos = motors[i].currentPos;
         motors[i].movePos = motors[i].targetPos - motors[i].currentPos;
+        motors[i].moveSteps = abs(motors[i].movePos*motors[i].stepsPerDeg);
         motors[i].targetSpeed = speedMin;
-        motors[i].stepInterval = 100;
+        motors[i].stepInterval = 1.0/TIMER_INTERVAL0_S/motors[i].targetSpeed*motors[i].degPerStep; // intervals/s s/deg deg/step
         motors[i].accelFractionSet = false;
         gpio_set_level(motors[i].pinEn, 0);
     }
@@ -352,8 +353,7 @@ static void connect_handler(void* arg, esp_event_base_t event_base,
     }
 }
 
-void IRAM_ATTR timer_0_isr(void *para)
-{
+void IRAM_ATTR timer_0_isr(void *para) {
     timer_spinlock_take(TIMER_GROUP_0);
     bool stepMaster = false;
     bool stepSlave = false;
@@ -381,10 +381,10 @@ void IRAM_ATTR timer_0_isr(void *para)
             }
             //update speed level
             if((motors[m].fractionComplete < motors[m].accelFraction)
-                 || (abs(motors[m].stepsToTarget) > abs(0.5*motors[m].moveSteps))) {
-                motors[m].targetSpeed += accel*motors[m].stepInterval; //deg/s
-                if(motors[m].targetSpeed > speedMax) {
-                    motors[m].targetSpeed = speedMax;
+                 || (abs(motors[m].stepsToTarget) > 0.5*motors[m].moveSteps)) {
+                // accel in deg/s2 stepInterval is n*.0002s
+                motors[m].targetSpeed += accel*motors[m].stepInterval*TIMER_INTERVAL0_S;
+                if(motors[m].stepInterval == minStepInterval) {
                     if(!motors[m].accelFractionSet) {
                         motors[m].accelFraction = motors[m].fractionComplete;
                         motors[m].accelFractionSet = true;
@@ -392,16 +392,15 @@ void IRAM_ATTR timer_0_isr(void *para)
                 }
             } else {
                 //decelerate
-                motors[m].targetSpeed -= accel*motors[m].stepInterval;
+                motors[m].targetSpeed -= accel*motors[m].stepInterval*TIMER_INTERVAL0_S;
                 if(motors[m].targetSpeed <= speedMin) {
                     motors[m].targetSpeed = speedMin;
                 }
             }
             //compute time per step for target speed
-            motors[m].stepInterval = 10000.0/motors[m].targetSpeed*motors[m].degPerStep; // intervals/s s/deg deg/step
-            motors[m].stepInterval = 20;
-            if(motors[m].stepInterval > 100) motors[m].stepInterval = 100; 
-            if(motors[m].stepInterval < 4) motors[m].stepInterval = 50;
+            motors[m].stepInterval = 1.0/TIMER_INTERVAL0_S/motors[m].targetSpeed*motors[m].degPerStep; // intervals/s s/deg deg/step
+            // if(motors[m].stepInterval > 200) motors[m].stepInterval = 100; 
+            if(motors[m].stepInterval < minStepInterval) motors[m].stepInterval = minStepInterval;
             stepMaster = true;           
         } else {
             // gpio_set_level(motors[m].pinEn, 1);
@@ -677,7 +676,8 @@ void app_main(void) {
         // printf("motor1 stepsToTarget: %d\n", motors[1].stepsToTarget);
         // printf("motor0, 1, fraction: %.2f, %.2f\n", motors[0].fractionComplete, motors[1].fractionComplete);
 
-        printf("J0 %.1f\t J1 %.1f\t J2 %.1f\n", motors[0].currentPos, motors[1].currentPos, motors[2].currentPos);
-        vTaskDelay(1000 / portTICK_RATE_MS);
+        // printf("J0 %.1f\t J1 %.1f\t J2 %.1f\n", motors[0].currentPos, motors[1].currentPos, motors[2].currentPos);
+        printf("%.0f\t%d\n", motors[0].stepInterval, motors[0].accelFractionSet);
+        vTaskDelay(100 / portTICK_RATE_MS);
     }
 }
