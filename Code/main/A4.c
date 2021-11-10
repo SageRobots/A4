@@ -66,7 +66,7 @@ const int pinCS1 = 42;
 const int pinCS0 = 45;
 
 const bool enableJ0 = true;
-const bool enableJ1 = false;
+const bool enableJ1 = true;
 const bool enableJ2 = false;
 const bool enableJ3 = false;
 
@@ -80,6 +80,7 @@ float battery = 12.0;
 const float speedMin = 12.0/27.0; // deg/s
 const float accel = 360.0/27.0; // deg/s2
 const int minStepInterval = 20;
+const float angleTolerance = 0.3;
 
 struct motor {
     float stepsPerDeg;
@@ -213,9 +214,9 @@ static esp_err_t get_handler_2(httpd_req_t *req) {
         snprintf(result, len + 1, "%.2f", battery);
         httpd_resp_sendstr(req, result);
     } else if (!strcmp(req->uri,"/pos")) {
-        int len = snprintf(NULL, 0, "%.2f", motors[0].currentPos);
+        int len = snprintf(NULL, 0, "J0:%.2f\t J1:%.2f\t", motors[0].currentPos, motors[1].currentPos);
         char *result = (char *)malloc(len + 1);
-        snprintf(result, len + 1, "%.2f", motors[0].currentPos);
+        snprintf(result, len + 1, "J0:%.2f\t J1:%.2f\t", motors[0].currentPos, motors[1].currentPos);
         httpd_resp_sendstr(req, result);
     } else {
         printf("URI: ");
@@ -361,7 +362,7 @@ void IRAM_ATTR timer_0_isr(void *para) {
     intr_count1++;
     intr_count2++;
     motors[m].numer = abs(motors[m].currentPos-motors[m].startPos)*motors[m].stepsPerDeg+(float)intr_count/motors[m].stepInterval;
-    motors[m].denom = (float)motors[m].moveSteps;
+    motors[m].denom = (float)motors[m].moveSteps-angleTolerance*motors[m].stepsPerDeg;
     if(motors[m].denom == 0) {
         motors[m].fractionComplete = 1;
     } else {
@@ -372,7 +373,7 @@ void IRAM_ATTR timer_0_isr(void *para) {
         //compute steps to target
         motors[m].stepsToTarget = round((motors[m].targetPos - motors[m].currentPos)*motors[m].stepsPerDeg);
         
-        if(abs(motors[m].stepsToTarget) >= 1.0*motors[m].stepsPerDeg) {
+        if(abs(motors[m].stepsToTarget) >= angleTolerance*motors[m].stepsPerDeg) {
             //set direction
             if(motors[m].stepsToTarget > 0) {
                 gpio_set_level(motors[m].pinDir, 0);
@@ -399,18 +400,15 @@ void IRAM_ATTR timer_0_isr(void *para) {
             }
             //compute time per step for target speed
             motors[m].stepInterval = 1.0/TIMER_INTERVAL0_S/motors[m].targetSpeed*motors[m].degPerStep; // intervals/s s/deg deg/step
-            // if(motors[m].stepInterval > 200) motors[m].stepInterval = 100; 
             if(motors[m].stepInterval < minStepInterval) motors[m].stepInterval = minStepInterval;
             stepMaster = true;           
         } else {
-            // gpio_set_level(motors[m].pinEn, 1);
             masterComplete = true;
-
         }
     }
 
     motors[s0].numer = abs(motors[s0].currentPos-motors[s0].startPos);
-    motors[s0].denom = (float)motors[s0].moveSteps;
+    motors[s0].denom = abs(motors[s0].movePos)-angleTolerance;
     if(motors[s0].denom == 0) {
         motors[s0].fractionComplete = 1;
     } else {
@@ -418,8 +416,9 @@ void IRAM_ATTR timer_0_isr(void *para) {
     }
 
     motors[s0].stepsToTarget = (motors[s0].targetPos - motors[s0].currentPos)*motors[s0].stepsPerDeg;
-    if(motors[s0].fractionComplete <= motors[m].fractionComplete && abs(motors[s0].stepsToTarget) > motors[s0].stepsPerDeg) {
-        if(intr_count1 >= 20) {
+    if(motors[s0].fractionComplete <= motors[m].fractionComplete 
+        && abs(motors[s0].stepsToTarget) > angleTolerance*motors[s0].stepsPerDeg) {
+        if(intr_count1 >= motors[m].stepInterval*motors[m].moveSteps/motors[s0].moveSteps) {
             stepSlave = true;
             intr_count1 = 0;            
         }
@@ -431,7 +430,6 @@ void IRAM_ATTR timer_0_isr(void *para) {
     }
 
     if(motors[s0].stepsToTarget == 0) {
-        // gpio_set_level(motors[s0].pinEn, 1);
         slaveComplete = true;
     }
 
@@ -676,8 +674,8 @@ void app_main(void) {
         // printf("motor1 stepsToTarget: %d\n", motors[1].stepsToTarget);
         // printf("motor0, 1, fraction: %.2f, %.2f\n", motors[0].fractionComplete, motors[1].fractionComplete);
 
-        // printf("J0 %.1f\t J1 %.1f\t J2 %.1f\n", motors[0].currentPos, motors[1].currentPos, motors[2].currentPos);
-        printf("%.0f\t%d\n", motors[0].stepInterval, motors[0].accelFractionSet);
-        vTaskDelay(100 / portTICK_RATE_MS);
+        printf("J0 %.1f\t J1 %.1f\t J2 %.1f\n", motors[0].currentPos, motors[1].currentPos, motors[2].currentPos);
+        // printf("J0 %.2f\t J1 %.2f\t\n", motors[0].fractionComplete, motors[1].fractionComplete);
+        vTaskDelay(1000 / portTICK_RATE_MS);
     }
 }
