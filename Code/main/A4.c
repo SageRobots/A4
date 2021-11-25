@@ -67,7 +67,7 @@ const int pinCS0 = 45;
 
 const bool enableJ0 = true;
 const bool enableJ1 = true;
-const bool enableJ2 = false;
+const bool enableJ2 = true;
 const bool enableJ3 = false;
 
 const int pinCharge = ADC2_CHANNEL_2;
@@ -103,11 +103,9 @@ struct motor {
     volatile float numer;
     volatile float denom;
     volatile float fractionComplete;
+    volatile int intrCount;
 };
 
-volatile int intr_count = 0;
-volatile int intr_count1 = 0;
-volatile int intr_count2 = 0;
 volatile bool masterComplete, slaveComplete;
 bool newMove;
 
@@ -354,32 +352,69 @@ static void connect_handler(void* arg, esp_event_base_t event_base,
     }
 }
 
+void IRAM_ATTR setDir(int i) {
+    if(motors[i].stepsToTarget > 0) {
+        if(i == 2) {
+            gpio_set_level(motors[i].pinDir, 1);
+        } else {
+            gpio_set_level(motors[i].pinDir, 0);
+        }
+    } else {
+        if(i == 2) {
+            gpio_set_level(motors[i].pinDir, 0);
+        } else {
+            gpio_set_level(motors[i].pinDir, 1);
+        }
+    }
+}
+
+bool IRAM_ATTR runSlave(int s) {
+    motors[s].numer = abs(motors[s].currentPos-motors[s].startPos);
+    motors[s].denom = abs(motors[s].movePos)-angleTolerance;
+    if(motors[s].denom == 0) {
+        motors[s].fractionComplete = 1;
+    } else {
+        motors[s].fractionComplete = motors[s].numer/motors[s].denom;
+    }
+
+    motors[s].stepsToTarget = (motors[s].targetPos - motors[s].currentPos)*motors[s].stepsPerDeg;
+    if(motors[s].fractionComplete <= motors[m].fractionComplete 
+        && abs(motors[s].stepsToTarget) > angleTolerance*motors[s].stepsPerDeg) {
+
+        setDir(s);
+
+        if(motors[s].intrCount >= motors[m].stepInterval*motors[m].moveSteps/motors[s].moveSteps) {
+            motors[s].intrCount = 0;
+            return true;            
+        }
+    }
+    return false;
+}
+
 void IRAM_ATTR timer_0_isr(void *para) {
     timer_spinlock_take(TIMER_GROUP_0);
-    bool stepMaster = false;
-    bool stepSlave = false;
-    intr_count++;
-    intr_count1++;
-    intr_count2++;
-    motors[m].numer = abs(motors[m].currentPos-motors[m].startPos)*motors[m].stepsPerDeg+(float)intr_count/motors[m].stepInterval;
+    bool stepM = false;
+    bool stepS0 = false;
+    bool stepS1 = false;
+    motors[0].intrCount++;
+    motors[1].intrCount++;
+    motors[2].intrCount++;
+
+    motors[m].numer = abs(motors[m].currentPos-motors[m].startPos)*motors[m].stepsPerDeg+
+        (float)motors[m].intrCount/motors[m].stepInterval;
     motors[m].denom = (float)motors[m].moveSteps-angleTolerance*motors[m].stepsPerDeg;
     if(motors[m].denom == 0) {
         motors[m].fractionComplete = 1;
     } else {
         motors[m].fractionComplete = motors[m].numer/motors[m].denom;
     }
-    if(intr_count >= motors[m].stepInterval) {
-        intr_count = 0;
+    if(motors[m].intrCount >= motors[m].stepInterval) {
+        motors[m].intrCount = 0;
         //compute steps to target
         motors[m].stepsToTarget = round((motors[m].targetPos - motors[m].currentPos)*motors[m].stepsPerDeg);
         
         if(abs(motors[m].stepsToTarget) >= angleTolerance*motors[m].stepsPerDeg) {
-            //set direction
-            if(motors[m].stepsToTarget > 0) {
-                gpio_set_level(motors[m].pinDir, 0);
-            } else {
-                gpio_set_level(motors[m].pinDir, 1);
-            }
+            setDir(m);
             //update speed level
             if((motors[m].fractionComplete < motors[m].accelFraction)
                  || (abs(motors[m].stepsToTarget) > 0.5*motors[m].moveSteps)) {
@@ -401,41 +436,19 @@ void IRAM_ATTR timer_0_isr(void *para) {
             //compute time per step for target speed
             motors[m].stepInterval = 1.0/TIMER_INTERVAL0_S/motors[m].targetSpeed*motors[m].degPerStep; // intervals/s s/deg deg/step
             if(motors[m].stepInterval < minStepInterval) motors[m].stepInterval = minStepInterval;
-            stepMaster = true;           
+            stepM = true;           
         } else {
             masterComplete = true;
         }
     }
 
-    motors[s0].numer = abs(motors[s0].currentPos-motors[s0].startPos);
-    motors[s0].denom = abs(motors[s0].movePos)-angleTolerance;
-    if(motors[s0].denom == 0) {
-        motors[s0].fractionComplete = 1;
-    } else {
-        motors[s0].fractionComplete = motors[s0].numer/motors[s0].denom;
-    }
+    stepS0 = runSlave(s0);
+    stepS1 = runSlave(s1);
 
-    motors[s0].stepsToTarget = (motors[s0].targetPos - motors[s0].currentPos)*motors[s0].stepsPerDeg;
-    if(motors[s0].fractionComplete <= motors[m].fractionComplete 
-        && abs(motors[s0].stepsToTarget) > angleTolerance*motors[s0].stepsPerDeg) {
-        if(intr_count1 >= motors[m].stepInterval*motors[m].moveSteps/motors[s0].moveSteps) {
-            stepSlave = true;
-            intr_count1 = 0;            
-        }
-        if(motors[s0].stepsToTarget > 0) {
-            gpio_set_level(motors[s0].pinDir, 0);
-        } else {
-            gpio_set_level(motors[s0].pinDir, 1);
-        }
-    }
-
-    if(motors[s0].stepsToTarget == 0) {
-        slaveComplete = true;
-    }
-
-    if(stepMaster) gpio_set_level(motors[m].pinStep, 1);
-    if(stepSlave) gpio_set_level(motors[s0].pinStep, 1);
-    if(stepMaster | stepSlave) {
+    if(stepM) gpio_set_level(motors[m].pinStep, 1);
+    if(stepS0) gpio_set_level(motors[s0].pinStep, 1);
+    if(stepS1) gpio_set_level(motors[s1].pinStep, 1);
+    if(stepM | stepS0 | stepS1) {
         //set timer 1 to reset step pins
         uint64_t timer_counter_value = timer_group_get_counter_value_in_isr(TIMER_GROUP_0, TIMER_1);
         timer_counter_value += (uint64_t) (TIMER_INTERVAL1_S * TIMER_SCALE);
@@ -454,6 +467,7 @@ void IRAM_ATTR timer_1_isr(void *para)
     timer_group_clr_intr_status_in_isr(TIMER_GROUP_0, TIMER_1);
     gpio_set_level(motors[0].pinStep, 0);
     gpio_set_level(motors[1].pinStep, 0);
+    gpio_set_level(motors[2].pinStep, 0);
     timer_spinlock_give(TIMER_GROUP_0);
 }
 
@@ -486,6 +500,7 @@ void motorInit(int i, int pinEn, int pinStep, int pinDir, float gearRatio) {
     motors[i].fractionComplete = 0;
     motors[i].stepsPerDeg = 200.0*gearRatio/360.0;
     motors[i].degPerStep = 1.0/motors[i].stepsPerDeg;
+    motors[i].intrCount = 0;
 }
 
 void csLow(int pinCS) {
@@ -529,6 +544,7 @@ static void enc0_task(void *arg) {
     //set CS pins high to start
     csHigh(pinCS0);
     csHigh(pinCS1);
+    csHigh(pinCS2);
     //create SPI
     esp_err_t ret;
     spi_device_handle_t spi;
@@ -540,7 +556,7 @@ static void enc0_task(void *arg) {
         .quadhd_io_num=-1
     };
     spi_device_interface_config_t devcfg={
-        .clock_speed_hz=10000000,           //Clock out at 10 MHz
+        .clock_speed_hz=1000000,           //Clock out at 10 MHz
         .mode=1,                                //SPI mode 1
         .spics_io_num=-1,               //CS pins manually implemented
         .address_bits = 0,
@@ -557,39 +573,31 @@ static void enc0_task(void *arg) {
         if(enableJ0) {
             angle = getAngle(spi, pinCS0);
             if(angle != 999) {
-                if(abs(motors[0].currentPos - angle) > 10) {
-                    motors[0].currentPos = 0.8*motors[0].currentPos + 0.2*angle;
-                } else {
-                    motors[0].currentPos = angle;
-                }
+                motors[0].currentPos = angle;
             }
         } else {
             motors[0].currentPos = 0;
             motors[0].targetPos = 0;
         }
+        vTaskDelay(10 / portTICK_RATE_MS);
+
 
         if(enableJ1) {
             angle = getAngle(spi, pinCS1);
             if(angle != 999) {
-                if(abs(motors[1].currentPos - angle) > 10) {
-                    motors[1].currentPos = 0.8*motors[1].currentPos + 0.2*angle;
-                } else {
-                    motors[1].currentPos = angle;
-                }
+                motors[1].currentPos = angle;
             }
         } else {
             motors[1].currentPos = 0;
             motors[1].targetPos = 0;
         }
+        vTaskDelay(10 / portTICK_RATE_MS);
+
 
         if(enableJ2) {
             angle = getAngle(spi, pinCS2);
             if(angle != 999) {
-                if(abs(motors[2].currentPos - angle) > 10) {
-                    motors[2].currentPos = 0.8*motors[2].currentPos + 0.2*angle;
-                } else {
-                    motors[2].currentPos = angle;
-                }
+                motors[2].currentPos = angle;
             }
         } else {
             motors[2].currentPos = 0;
