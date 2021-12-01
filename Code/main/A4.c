@@ -66,10 +66,10 @@ const int pinCS2 = 41;
 const int pinCS1 = 42;
 const int pinCS0 = 45;
 
-const bool enableJ0 = true;
-const bool enableJ1 = 0;
-const bool enableJ2 = 0;
-const bool enableJ3 = 0;
+const bool enableJ0 = 1;
+const bool enableJ1 = 1;
+const bool enableJ2 = 1;
+const bool enableJ3 = 1;
 
 const int pinCharge = ADC2_CHANNEL_2;
 
@@ -78,7 +78,7 @@ int64_t timeSample = 0;
 int64_t timePrev = 0;
 float battery = 12.0;
 
-const float speedMin = 12.0/27.0; // deg/s
+const float speedMin = 1; // deg/s
 const float speedMax = 17; //deg/s should be 20 intervals per step
 const float accel = 360.0/27.0; // deg/s2
 // const int minStepInterval = 20;
@@ -90,7 +90,7 @@ struct motor {
     float targetPos;
     float currentPos;
     float startPos;
-    float movePos;
+    float totalDis;
     int64_t startTime;
     volatile float disToTarget;
     volatile float targetSpeed;
@@ -104,7 +104,7 @@ struct motor {
 volatile bool masterComplete, slaveComplete;
 bool newMove;
 
-struct motor motors[3];
+struct motor motors[4];
 int m = 0, s0 = 1, s1 = 2, s2 = 3;
 bool robotEnabled = false;
 
@@ -213,9 +213,11 @@ static esp_err_t get_handler_2(httpd_req_t *req) {
         snprintf(result, len + 1, "%.2f", battery);
         httpd_resp_sendstr(req, result);
     } else if (!strcmp(req->uri,"/pos")) {
-        int len = snprintf(NULL, 0, "J0:%.2f\t J1:%.2f\t", motors[0].currentPos, motors[1].currentPos);
+        int len = snprintf(NULL, 0, "J0:%.2f\t J1:%.2f\t J2:%.2f\t", 
+            motors[0].currentPos, motors[1].currentPos, motors[2].currentPos);
         char *result = (char *)malloc(len + 1);
-        snprintf(result, len + 1, "J0:%.2f\t J1:%.2f\t", motors[0].currentPos, motors[1].currentPos);
+        snprintf(result, len + 1, "J0:%.2f\t J1:%.2f\t J2:%.2f\t", 
+            motors[0].currentPos, motors[1].currentPos, motors[2].currentPos);
         httpd_resp_sendstr(req, result);
     } else {
         printf("URI: ");
@@ -225,44 +227,60 @@ static esp_err_t get_handler_2(httpd_req_t *req) {
     return ESP_OK;
 }
 
+int maxIndex() {
+    float max = 0;
+    int maxIndex = 0;
+    for (int i = 0; i < 4; i++) {
+        if(motors[i].totalDis > max) {
+            max = motors[i].totalDis;
+            maxIndex = i;
+        }
+    }
+    return maxIndex;
+}
+
 void planMove(float j0, float j1, float j2, float j3) {
     motors[0].targetPos = j0;
     motors[1].targetPos = j1;
     motors[2].targetPos = j2;
     motors[3].targetPos = j3;
 
-    m=0;
-
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 4; i++) {
         motors[i].startPos = motors[i].currentPos;
-        motors[i].movePos = motors[i].targetPos - motors[i].currentPos;
+        motors[i].totalDis = fabs(motors[i].targetPos - motors[i].startPos);
         motors[i].targetSpeed = speedMin;
         motors[i].stepInterval = 10000;
     }
 
+    m = maxIndex();
+    if(m == 0) {
+        s0 = 1;
+        s1 = 2;
+        s2 = 3;
+    } else if (m == 1) {
+        s0 = 0;
+        s1 = 2;
+        s2 = 3;
+    } else if (m == 2) {
+        s0 = 0;
+        s1 = 1;
+        s2 = 3;
+    } else {
+        s0 = 0;
+        s1 = 1;
+        s2 = 2;
+    }
+
     float accelTime = (speedMax-speedMin)/accel;
     accelDis = speedMin*accelTime + 0.5*accel*accelTime*accelTime;
-    totalDis = fabs(motors[m].targetPos - motors[m].startPos);
+    totalDis = motors[m].totalDis;
     if(accelDis > totalDis/2.0) accelDis = totalDis/2.0;
     coastDisEnd = totalDis - accelDis;
 
-    printf("accelDis %.1f\t coastDisEnd %.1f\t totalDis %.1f\n", accelDis, coastDisEnd, totalDis);
-
-    gpio_set_level(motors[0].pinEn, 0);
-
-    // if(abs(motors[0].movePos) > abs(motors[1].movePos) && abs(motors[0].movePos) > abs(motors[2].movePos)) {
-    //     m = 0;
-    //     s0 = 1;
-    //     s1 = 2;
-    // } else if (abs(motors[1].movePos) > abs(motors[2].movePos)) {
-    //     m = 1;
-    //     s0 = 0;
-    //     s1 = 2;
-    // } else {
-    //     m = 2;
-    //     s0 = 0;
-    //     s1 = 1;
-    // }
+    if(enableJ0) gpio_set_level(motors[0].pinEn, 0);
+    if(enableJ1) gpio_set_level(motors[1].pinEn, 0);
+    if(enableJ2) gpio_set_level(motors[2].pinEn, 0);
+    if(enableJ3) gpio_set_level(motors[3].pinEn, 0);
 
     if(!robotEnabled) {
         timer_start(TIMER_GROUP_0, TIMER_0);
@@ -297,8 +315,8 @@ static esp_err_t get_handler_move(httpd_req_t *req) {
                 ESP_LOGI(TAG, "Found URL query parameter => j2=%s", param);
                 if(enableJ2) j2 = atof(param);
             }
-            if (httpd_query_key_value(buf, "j2", param, sizeof(param)) == ESP_OK) {
-                ESP_LOGI(TAG, "Found URL query parameter => j2=%s", param);
+            if (httpd_query_key_value(buf, "j3", param, sizeof(param)) == ESP_OK) {
+                ESP_LOGI(TAG, "Found URL query parameter => j3=%s", param);
                 if(enableJ3) j3 = atof(param);
             }
             planMove(j0, j1, j2, j3);
@@ -386,31 +404,20 @@ void IRAM_ATTR setDir(int i) {
 
 void IRAM_ATTR timer_0_0_isr(void *para) {
     timer_spinlock_take(TIMER_GROUP_0);
-    bool stepM = false;
-    bool stepS0 = false;
-    bool stepS1 = false;
-    bool stepS2 = false;
-    motors[0].intrCount++;
-    motors[1].intrCount++;
-    motors[2].intrCount++;
-    motors[3].intrCount++;
 
-    if(motors[m].intrCount >= motors[m].stepInterval && fabs(motors[m].disToTarget) > angleTolerance) {
-        motors[m].intrCount = 0;
-        stepM = true;
+    for(int i = 0; i<4; i++) {
+        motors[i].intrCount++;
+        if(motors[i].intrCount >= motors[i].stepInterval && fabs(motors[i].disToTarget) > angleTolerance) {
+            motors[i].intrCount = 0;
+            gpio_set_level(motors[i].pinStep, 1);
+        }
     }
 
-    if(stepM) gpio_set_level(motors[m].pinStep, 1);
-    if(stepS0) gpio_set_level(motors[s0].pinStep, 1);
-    if(stepS1) gpio_set_level(motors[s1].pinStep, 1);
-    if(stepS2) gpio_set_level(motors[s2].pinStep, 1);
-    if(stepM | stepS0 | stepS1 | stepS2) {
-        //set timer 1 to reset step pins
-        uint64_t timer_counter_value = timer_group_get_counter_value_in_isr(TIMER_GROUP_0, TIMER_1);
-        timer_counter_value += (uint64_t) (TIMER_INTERVAL1_S * TIMER_SCALE);
-        timer_group_set_alarm_value_in_isr(TIMER_GROUP_0, TIMER_1, timer_counter_value);
-        timer_group_enable_alarm_in_isr(TIMER_GROUP_0, TIMER_1);
-    }
+    //set timer 1 to reset step pins
+    uint64_t timer_counter_value = timer_group_get_counter_value_in_isr(TIMER_GROUP_0, TIMER_1);
+    timer_counter_value += (uint64_t) (TIMER_INTERVAL1_S * TIMER_SCALE);
+    timer_group_set_alarm_value_in_isr(TIMER_GROUP_0, TIMER_1, timer_counter_value);
+    timer_group_enable_alarm_in_isr(TIMER_GROUP_0, TIMER_1);
 
     timer_group_clr_intr_status_in_isr(TIMER_GROUP_0, TIMER_0);
     timer_group_enable_alarm_in_isr(TIMER_GROUP_0, TIMER_0);
@@ -458,9 +465,14 @@ void IRAM_ATTR timer_1_0_isr(void *para) {
 
     // deg/s*step/deg -> step/s step/s*s/interval -> step/interval
     motors[m].stepInterval = 1.0/(motors[m].targetSpeed*motors[m].stepsPerDeg*TIMER_INTERVAL0_S);
+    motors[s0].stepInterval = motors[m].stepInterval*motors[m].totalDis/motors[s0].totalDis;
+    motors[s1].stepInterval = motors[m].stepInterval*motors[m].totalDis/motors[s1].totalDis;
+    motors[s2].stepInterval = motors[m].stepInterval*motors[m].totalDis/motors[s2].totalDis;
 
-    motors[m].disToTarget = motors[m].targetPos - motors[m].currentPos;
-    setDir(m);
+    for(int i = 0; i<4; i++) {
+        motors[i].disToTarget = motors[i].targetPos - motors[i].currentPos;
+        setDir(i);
+    }
 
     timer_group_clr_intr_status_in_isr(TIMER_GROUP_1, TIMER_0);
     timer_group_enable_alarm_in_isr(TIMER_GROUP_1, TIMER_0);
@@ -496,7 +508,7 @@ void motorInit(int i, int pinEn, int pinStep, int pinDir, float gearRatio) {
     motors[i].stepsPerDeg = 200.0*gearRatio/360.0;
     motors[i].degPerStep = 1.0/motors[i].stepsPerDeg;
     motors[i].intrCount = 0;
-    motors[i].startTime = 0;
+    motors[i].totalDis = 0;
 }
 
 void csLow(int pinCS) {
@@ -687,9 +699,9 @@ void app_main(void) {
         // printf("motor1 stepsToTarget: %d\n", motors[1].stepsToTarget);
         // printf("motor0, 1, fraction: %.2f, %.2f\n", motors[0].fractionComplete, motors[1].fractionComplete);
 
-        printf("J0 %.1f\t J1 %.1f\t J2 %.1f\t J3 %.1f\n", motors[0].currentPos, targetSpeed, 
-            dis, motors[3].currentPos);
+        printf("J0 %.1f\t J1 %.1f\t J2 %.1f\t J3 %.1f\n", motors[0].currentPos, motors[1].currentPos, 
+            motors[2].currentPos, motors[3].currentPos);
         // printf("J0 %.0f\t speed %.1f\n", motors[0].stepInterval, motors[0].targetSpeed);
-        vTaskDelay(100 / portTICK_RATE_MS);
+        vTaskDelay(500 / portTICK_RATE_MS);
     }
 }
