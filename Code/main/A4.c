@@ -75,8 +75,8 @@ int64_t timeSample = 0;
 int64_t timePrev = 0;
 float battery = 12.0;
 
-const float speedMin = 2; // deg/s
-const float speedMax = 15; //deg/s should be 20 intervals per step
+const float speedMin = 3; // deg/s
+const float speedMax[4] = {17, 17, 17, 8}; //deg/s should be 20 intervals per step
 const float accel = 360.0/27.0; // deg/s2
 const float angleTolerance = 0.3;
 
@@ -113,10 +113,10 @@ volatile float dis = 0;
 
 //offsets
 //j0 = 242.3 facing left, set to 270
-//j1 = 255.1 all the way back, set to 45
+//j1 = 216.2 all the way back, set to 45
 //j2 = 28.6 straight up, set to 180
 //j3 = 257.7 straight out, set to 90
-const float offset[4] = {270-242.3, 45-255.1, 180-28.6, 90-257.7};
+const float offset[4] = {270-242.3, 45-216.2, 180-28.6, 90-257.7};
 
 static void event_handler(void* arg, esp_event_base_t event_base,
                                 int32_t event_id, void* event_data) {
@@ -275,7 +275,7 @@ void planMove(float j0, float j1, float j2, float j3) {
         s2 = 2;
     }
 
-    float accelTime = (speedMax-speedMin)/accel;
+    float accelTime = (speedMax[m]-speedMin)/accel;
     accelDis = speedMin*accelTime + 0.5*accel*accelTime*accelTime;
     totalDis = motors[m].totalDis;
     if(accelDis > totalDis/2.0) accelDis = totalDis/2.0;
@@ -454,7 +454,7 @@ void IRAM_ATTR timer_1_0_isr(void *para) {
         t = (-b+sqrt(b*b - 4*a*c))/(2*a);
         targetSpeed = speedMin + accel*t;
     } else if (dis < coastDisEnd) {
-        targetSpeed = speedMax;
+        targetSpeed = speedMax[m];
     } else if (dis < totalDis) {
         a = 0.5*accel;
         b = speedMin;
@@ -464,14 +464,19 @@ void IRAM_ATTR timer_1_0_isr(void *para) {
     }
     motors[m].targetSpeed = targetSpeed;
 
-    if(motors[m].targetSpeed > speedMax) motors[m].targetSpeed = speedMax;
+    if(motors[m].targetSpeed > speedMax[m]) motors[m].targetSpeed = speedMax[m];
     if(motors[m].targetSpeed < speedMin) motors[m].targetSpeed = speedMin;
 
     // deg/s*step/deg -> step/s step/s*s/interval -> step/interval
     motors[m].stepInterval = 1.0/(motors[m].targetSpeed*motors[m].stepsPerDeg*TIMER_INTERVAL0_S);
     motors[s0].stepInterval = motors[m].stepInterval*motors[m].totalDis/motors[s0].totalDis;
     motors[s1].stepInterval = motors[m].stepInterval*motors[m].totalDis/motors[s1].totalDis;
-    motors[s2].stepInterval = motors[m].stepInterval*motors[m].totalDis/motors[s2].totalDis;
+    if(s2 == 3) {
+        motors[s2].targetSpeed = motors[m].targetSpeed*motors[s2].totalDis/motors[m].totalDis;
+        motors[s2].stepInterval = 1.0/(motors[s2].targetSpeed*motors[s2].stepsPerDeg*TIMER_INTERVAL0_S);
+    } else {
+        motors[s2].stepInterval = motors[m].stepInterval*motors[m].totalDis/motors[s2].totalDis;
+    }
 
     for(int i = 0; i<4; i++) {
         motors[i].disToTarget = motors[i].targetPos - motors[i].currentPos;
