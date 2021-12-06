@@ -76,7 +76,8 @@ int64_t timePrev = 0;
 float battery = 12.0;
 
 const float speedMin = 3; // deg/s
-const float speedMax[4] = {17, 17, 17, 8}; //deg/s should be 20 intervals per step
+const float speedMax[4] = {17, 17, 17, 8}; //deg/s
+const float speedLimit[4] = {19, 19, 19, 10}; //deg/s
 const float accel = 360.0/27.0; // deg/s2
 const float angleTolerance = 0.3;
 
@@ -87,7 +88,7 @@ struct motor {
     float currentPos;
     float startPos;
     float totalDis;
-    int64_t startTime;
+    int64_t startTimeMicros;
     volatile float disToTarget;
     volatile float targetSpeed;
     volatile float stepInterval;
@@ -106,10 +107,14 @@ int m = 0, s0 = 1, s1 = 2, s2 = 3;
 bool robotEnabled = false;
 
 float totalDis = 0;
-float coastDisEnd = 0;
+float coastEndDis = 0;
+float coastEndTime = 0;
 float accelDis = 0;
+float accelTime = 0;
+float totalTime = 0;
 volatile float targetSpeed = speedMin;
 volatile float dis = 0;
+const float million = 1000000;
 
 //offsets
 //j0 = 242.3 facing left, set to 270
@@ -253,7 +258,7 @@ void planMove(float j0, float j1, float j2, float j3) {
         motors[i].startPos = motors[i].currentPos;
         motors[i].totalDis = fabs(motors[i].targetPos - motors[i].startPos);
         motors[i].targetSpeed = speedMin;
-        motors[i].stepInterval = 10000;
+        motors[i].stepInterval = 754;
     }
 
     m = maxIndex();
@@ -275,11 +280,16 @@ void planMove(float j0, float j1, float j2, float j3) {
         s2 = 2;
     }
 
-    float accelTime = (speedMax[m]-speedMin)/accel;
+    accelTime = (speedMax[m]-speedMin)/accel;
     accelDis = speedMin*accelTime + 0.5*accel*accelTime*accelTime;
     totalDis = motors[m].totalDis;
     if(accelDis > totalDis/2.0) accelDis = totalDis/2.0;
-    coastDisEnd = totalDis - accelDis;
+    coastEndDis = totalDis - accelDis;
+    float coastTime = (totalDis - 2*accelDis)/speedMax[m];
+    coastEndTime = coastTime + accelTime;
+    totalTime = coastEndTime + accelTime;
+
+    motors[m].startTimeMicros = esp_timer_get_time();
 
     if(enable[0]) gpio_set_level(motors[0].pinEn, 0);
     if(enable[1]) gpio_set_level(motors[1].pinEn, 0);
@@ -442,29 +452,32 @@ void IRAM_ATTR timer_0_1_isr(void *para) {
 void IRAM_ATTR timer_1_0_isr(void *para) {
     timer_spinlock_take(TIMER_GROUP_1);
 
-    //compute master axis speed based on displacement
+    //compute desired displacment at this time
+    float t = (esp_timer_get_time() - motors[m].startTimeMicros)/million;
     dis = fabs(motors[m].currentPos - motors[m].startPos);
-    float a, b, c, t;
-    targetSpeed = speedMin;
-    if(dis < accelDis) {
-        //estimate time from displacement to calculate desired velocity
-        a = 0.5*accel;
-        b = speedMin;
-        c = -dis;
-        t = (-b+sqrt(b*b - 4*a*c))/(2*a);
-        targetSpeed = speedMin + accel*t;
-    } else if (dis < coastDisEnd) {
-        targetSpeed = speedMax[m];
-    } else if (dis < totalDis) {
-        a = 0.5*accel;
-        b = speedMin;
-        c = -(totalDis - dis);
-        t = (-b+sqrt(b*b - 4*a*c))/(2*a);
-        targetSpeed = speedMin + accel*t;
-    }
-    motors[m].targetSpeed = targetSpeed;
+    float targetDis = 0;
 
-    if(motors[m].targetSpeed > speedMax[m]) motors[m].targetSpeed = speedMax[m];
+    if(dis < accelDis) {
+        targetDis = speedMin*t + 0.5*accel*t*t;
+    } else if(dis < coastEndDis) {
+        targetDis = accelDis + speedMax[m]*(t-accelTime);
+    } else if(dis < totalDis) {
+        targetDis = coastEndDis + speedMax[m]*t - 0.5*accel*(t-coastEndTime)*(t-coastEndTime);
+    } else if(dis >= totalDis) {
+        targetDis = totalDis;
+    }
+
+    if(t > totalTime) {
+        targetDis = totalDis;
+    }
+
+    if(dis < targetDis) {
+        motors[m].targetSpeed += accel*TIMER_INTERVAL2;
+    } else if (dis > targetDis) {
+        motors[m].targetSpeed -= accel*TIMER_INTERVAL2;
+    }
+
+    if(motors[m].targetSpeed > speedLimit[m]) motors[m].targetSpeed = speedLimit[m];
     if(motors[m].targetSpeed < speedMin) motors[m].targetSpeed = speedMin;
 
     // deg/s*step/deg -> step/s step/s*s/interval -> step/interval
