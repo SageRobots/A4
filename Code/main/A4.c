@@ -90,13 +90,14 @@ struct motor {
     float totalDis;
     int64_t startTimeMicros;
     volatile float disToTarget;
-    volatile float targetSpeed;
+    volatile float speed;
     volatile float stepInterval;
     int pinStep;
     int pinDir;
     int pinEn;
     int pinCS;
     volatile int intrCount;
+    float moveTime;
 };
 
 volatile bool masterComplete, slaveComplete;
@@ -106,15 +107,10 @@ struct motor motors[4];
 int m = 0, s0 = 1, s1 = 2, s2 = 3;
 bool robotEnabled = false;
 
-float totalDis = 0;
-float coastEndDis = 0;
-float coastEndTime = 0;
-float accelDis = 0;
-float accelTime = 0;
-float totalTime = 0;
 volatile float targetSpeed = speedMin;
 volatile float dis = 0;
 const float million = 1000000;
+float kp = 0.8;
 
 //offsets
 //j0 = 242.3 facing left, set to 270
@@ -240,12 +236,36 @@ int maxIndex() {
     float max = 0;
     int maxIndex = 0;
     for (int i = 0; i < 4; i++) {
-        if(motors[i].totalDis > max) {
-            max = motors[i].totalDis;
+        if(motors[i].moveTime > max) {
+            max = motors[i].moveTime;
             maxIndex = i;
         }
     }
     return maxIndex;
+}
+
+void computeMoveTimes(int i) {
+    float accelTime = (speedMax[i]-speedMin)/accel;
+    float t = accelTime;
+    float accelDis = speedMin*t + 0.5*accel*t*t;
+    float totalDis = motors[i].totalDis;
+    if(accelDis > totalDis/2.0) accelDis = totalDis/2.0;
+    float coastTime = (totalDis - 2*accelDis)/speedMax[i];
+    float coastEndTime = coastTime + accelTime;
+    motors[i].moveTime = coastEndTime + accelTime;
+}
+
+void computeSlaveMove(int i) {
+    float accelS = accel;
+    float accelTime = motors[m].accelTime;
+    while(fabs(motors[i].moveTime - motors[m].moveTime) > 0.1) {
+        float speed = speedMin + accelS*accelTime;
+        float accelDis = speedMin*accelTime + 0.5*accelS*accelTime*accelTime;
+        float totalDis = motors[i].totalDis;
+        if(accelDis > totalDis/2.0) accelDis = totalDis/2.0;
+        float coastTime = (totalDis - 2*accelDis)/speed;
+        motors[i].moveTime = coastTime + 2*accelTime;
+    }
 }
 
 void planMove(float j0, float j1, float j2, float j3) {
@@ -257,8 +277,9 @@ void planMove(float j0, float j1, float j2, float j3) {
     for (int i = 0; i < 4; i++) {
         motors[i].startPos = motors[i].currentPos;
         motors[i].totalDis = fabs(motors[i].targetPos - motors[i].startPos);
-        motors[i].targetSpeed = speedMin;
+        motors[i].speed = speedMin;
         motors[i].stepInterval = 754;
+        computeMoveTimes(i);
     }
 
     m = maxIndex();
@@ -280,14 +301,8 @@ void planMove(float j0, float j1, float j2, float j3) {
         s2 = 2;
     }
 
-    accelTime = (speedMax[m]-speedMin)/accel;
-    accelDis = speedMin*accelTime + 0.5*accel*accelTime*accelTime;
-    totalDis = motors[m].totalDis;
-    if(accelDis > totalDis/2.0) accelDis = totalDis/2.0;
-    coastEndDis = totalDis - accelDis;
-    float coastTime = (totalDis - 2*accelDis)/speedMax[m];
-    coastEndTime = coastTime + accelTime;
-    totalTime = coastEndTime + accelTime;
+    //adjust speed and accel of slaves to finish in same time as master
+    computeSlaveMove(i);
 
     motors[m].startTimeMicros = esp_timer_get_time();
 
@@ -332,6 +347,10 @@ static esp_err_t get_handler_move(httpd_req_t *req) {
             if (httpd_query_key_value(buf, "j3", param, sizeof(param)) == ESP_OK) {
                 ESP_LOGI(TAG, "Found URL query parameter => j3=%s", param);
                 if(enable[3]) j3 = atof(param);
+            }
+            if (httpd_query_key_value(buf, "kp", param, sizeof(param)) == ESP_OK) {
+                ESP_LOGI(TAG, "Found URL query parameter => kp=%s", param);
+                kp = atof(param);
             }
             planMove(j0, j1, j2, j3);
         }
@@ -452,41 +471,56 @@ void IRAM_ATTR timer_0_1_isr(void *para) {
 void IRAM_ATTR timer_1_0_isr(void *para) {
     timer_spinlock_take(TIMER_GROUP_1);
 
-    //compute desired displacment at this time
     float t = (esp_timer_get_time() - motors[m].startTimeMicros)/million;
-    dis = fabs(motors[m].currentPos - motors[m].startPos);
-    float targetDis = 0;
 
-    if(dis < accelDis) {
+    //adjust speed of each motor
+    for(int i=0; i<4; i++) {
+        dis = fabs(motors[i].currentPos - motors[i].startPos);
+        float targetDis = 0;
+        float error = 0;
+        float accel = motors[i].accel;
+
+        if(dis < motors[i].accelDis) {
         targetDis = speedMin*t + 0.5*accel*t*t;
-    } else if(dis < coastEndDis) {
-        targetDis = accelDis + speedMax[m]*(t-accelTime);
-    } else if(dis < totalDis) {
-        targetDis = coastEndDis + speedMax[m]*t - 0.5*accel*(t-coastEndTime)*(t-coastEndTime);
-    } else if(dis >= totalDis) {
-        targetDis = totalDis;
+        targetSpeed = speedMin + accel*t;
+    } else if(dis < motors[i].coastEndDis) {
+        targetDis = accelDis + speedMax[i]*(t-motors[i].accelTime);
+        targetSpeed = speedMax[i];
+    } else if(dis < motors[i].totalDis) {
+        float tc = t-motors[i].coastEndTime;
+        targetDis = motors[i].coastEndDis + speedMax[i]*t - 0.5*accel*tc*tc;
+        targetSpeed = speedMax[i] - accel*tc;
+    } else if(dis >= motors[i].totalDis) {
+        targetDis = motors[i].totalDis;
+        targetSpeed = speedMin;
     }
+    }
+
+
+
 
     if(t > totalTime) {
         targetDis = totalDis;
+        targetSpeed = speedMin;
     }
 
-    if(dis < targetDis) {
-        motors[m].targetSpeed += accel*TIMER_INTERVAL2;
-    } else if (dis > targetDis) {
-        motors[m].targetSpeed -= accel*TIMER_INTERVAL2;
-    }
+    error = targetDis - dis;
 
-    if(motors[m].targetSpeed > speedLimit[m]) motors[m].targetSpeed = speedLimit[m];
-    if(motors[m].targetSpeed < speedMin) motors[m].targetSpeed = speedMin;
+    motors[m].speed = targetSpeed + kp*error;
+
+    //limit speed
+    if(motors[m].speed > 1.1*targetSpeed) motors[m].speed = 1.1*targetSpeed;
+    if(motors[m].speed > speedLimit[m]) motors[m].speed = speedLimit[m];
+    if(motors[m].speed < speedMin) motors[m].speed = speedMin;
 
     // deg/s*step/deg -> step/s step/s*s/interval -> step/interval
-    motors[m].stepInterval = 1.0/(motors[m].targetSpeed*motors[m].stepsPerDeg*TIMER_INTERVAL0_S);
+    motors[m].stepInterval = 1.0/(motors[m].speed*motors[m].stepsPerDeg*TIMER_INTERVAL0_S);
     motors[s0].stepInterval = motors[m].stepInterval*motors[m].totalDis/motors[s0].totalDis;
     motors[s1].stepInterval = motors[m].stepInterval*motors[m].totalDis/motors[s1].totalDis;
     if(s2 == 3) {
-        motors[s2].targetSpeed = motors[m].targetSpeed*motors[s2].totalDis/motors[m].totalDis;
-        motors[s2].stepInterval = 1.0/(motors[s2].targetSpeed*motors[s2].stepsPerDeg*TIMER_INTERVAL0_S);
+        motors[s2].speed = motors[m].speed*motors[s2].totalDis/motors[m].totalDis;
+        if(motors[s2].speed > speedMax[3]) motors[s2].speed = speedMax[3];
+        motors[s2].stepInterval = 1.0/(motors[s2].speed*motors[s2].stepsPerDeg*TIMER_INTERVAL0_S);
     } else {
         motors[s2].stepInterval = motors[m].stepInterval*motors[m].totalDis/motors[s2].totalDis;
     }
@@ -586,7 +620,7 @@ static void enc0_task(void *arg) {
         .quadhd_io_num=-1
     };
     spi_device_interface_config_t devcfg={
-        .clock_speed_hz=1000000,           //Clock out at 10 MHz
+        .clock_speed_hz=5000000,           //Clock out at 10 MHz
         .mode=1,                                //SPI mode 1
         .spics_io_num=-1,               //CS pins manually implemented
         .address_bits = 0,
@@ -682,9 +716,9 @@ void app_main(void) {
         // printf("motor1 stepsToTarget: %d\n", motors[1].stepsToTarget);
         // printf("motor0, 1, fraction: %.2f, %.2f\n", motors[0].fractionComplete, motors[1].fractionComplete);
 
-        printf("J0 %.1f\t J1 %.1f\t J2 %.1f\t J3 %.1f\n", motors[0].currentPos, motors[1].currentPos, 
-            motors[2].currentPos, motors[3].currentPos);
-        // printf("J0 %.0f\t speed %.1f\n", motors[0].stepInterval, motors[0].targetSpeed);
-        vTaskDelay(500 / portTICK_RATE_MS);
+        // printf("J0 %.1f\t J1 %.1f\t J2 %.1f\t J3 %.1f\n", motors[0].currentPos, motors[1].currentPos, 
+        //     motors[2].currentPos, motors[3].currentPos);
+        printf("J0 %.0f\t speed %.1f\n", motors[0].stepInterval, motors[0].speed);
+        vTaskDelay(100 / portTICK_RATE_MS);
     }
 }
