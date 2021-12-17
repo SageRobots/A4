@@ -103,6 +103,7 @@ struct motor {
     float accel;
     float coastEndDis;
     float coastEndTime;
+    float speedMax;
 
 };
 
@@ -123,7 +124,7 @@ float kp = 0.8;
 //j1 = 216.2 all the way back, set to 45
 //j2 = 28.6 straight up, set to 180
 //j3 = 257.7 straight out, set to 90
-const float offset[4] = {270-242.3, 45-216.2, 180-28.6, 90-257.7};
+const float offset[4] = {270-242.3, 45-33, 180-28.6, 90-257.7};
 
 static void event_handler(void* arg, esp_event_base_t event_base,
                                 int32_t event_id, void* event_data) {
@@ -250,14 +251,24 @@ int maxIndex() {
     return maxIndex;
 }
 
+float quadratic(float a, float b, float c) {
+    return (-b + sqrt(b*b - 4*a*c))/(2*a);
+}
+
 void updateMotor(int i, float a, float at) {
-    float speed = speedMin + a*at;
     float accelDis = speedMin*at + 0.5*a*at*at;
-    if(accelDis > dis/2.0) accelDis = dis/2.0;
-    float coastTime = (dis - 2*accelDis)/speed;
+    if(accelDis > motors[i].totalDis/2.0) {
+        accelDis = motors[i].totalDis/2.0;
+        // x = v0*t + .5*a*t^2
+        // 0 = .5*a*t^2 + v0*t - x
+        at = quadratic(0.5*a, speedMin, -accelDis);
+    }
+    float speed = speedMin + a*at;
+    float coastTime = (motors[i].totalDis - 2*accelDis)/speed;
     motors[i].accel = a;
     motors[i].accelTime = at;
     motors[i].accelDis = accelDis;
+    motors[i].speedMax = speed;
     motors[i].coastEndDis = motors[i].totalDis - accelDis;
     motors[i].coastEndTime = coastTime + at;
     motors[i].moveTime = 2.0*at + coastTime;
@@ -278,20 +289,24 @@ float computeMoveTime(float a, float at, float dis) {
 
 void computeSlaveMove(int i) {
     //compute move time with large accel step and track when time goes from < to > master
+    if(i == m) return;
     float a0 = 0.1;
     float at = motors[m].accelTime;
     float aStep = 10;
     float a1 = a0+aStep;
     float tm = motors[m].moveTime;
     float t = computeMoveTime(a0, at, motors[i].totalDis);
-    if(t < tm) {
+    if(t <= tm) {
         updateMotor(i, a0, at);
+        printf("i %d\t tm %.2f\t t %.2f\t a %.2f\n", i, tm, t, a0);
         return;
     }
-
+    int loops = 0;
     while(true) {
+        loops++;
         t = computeMoveTime(a1, at, motors[i].totalDis);
-        if(t < tm) {
+        printf("i %d\t tm %.2f\t t %.2f\t a %.2f\n", i, tm, t, a1);
+        if(t <= tm) {
             if(fabs(t - tm) < 0.1) {
                 updateMotor(i, a1, at);
                 return;
@@ -303,7 +318,7 @@ void computeSlaveMove(int i) {
             a0 = a1;
             a1 += aStep;
         }
-        printf("a %.2f\t t %.2f\t", a1, t);
+        if(loops > 1000) return;
     }
 }
 
@@ -345,6 +360,8 @@ void planMove(float j0, float j1, float j2, float j3) {
         computeSlaveMove(i);    
     }
 
+    printf("m accel %.2f\t accelDis %.2f\t coastEndDis %.2f\t speedMax %.2f\n", motors[m].accel, 
+        motors[m].accelDis, motors[m].coastEndDis, motors[m].speedMax);
     motors[m].startTimeMicros = esp_timer_get_time();
 
     if(enable[0]) gpio_set_level(motors[0].pinEn, 0);
@@ -519,18 +536,19 @@ void IRAM_ATTR timer_1_0_isr(void *para) {
         dis = fabs(motors[i].currentPos - motors[i].startPos);
         float targetDis = 0;
         float error = 0;
-        float accel = motors[i].accel;
+        float a = motors[i].accel;
+        float s = motors[i].speedMax;
 
         if(dis < motors[i].accelDis) {
-            targetDis = speedMin*t + 0.5*accel*t*t;
-            targetSpeed = speedMin + accel*t;
+            targetDis = speedMin*t + 0.5*a*t*t;
+            targetSpeed = speedMin + a*t;
         } else if(dis < motors[i].coastEndDis) {
-            targetDis = motors[i].accelDis + speedMax[i]*(t-motors[i].accelTime);
-            targetSpeed = speedMax[i];
+            targetDis = motors[i].accelDis + s*(t-motors[i].accelTime);
+            targetSpeed = s;
         } else if(dis < motors[i].totalDis) {
             float tc = t-motors[i].coastEndTime;
-            targetDis = motors[i].coastEndDis + speedMax[i]*t - 0.5*accel*tc*tc;
-            targetSpeed = speedMax[i] - accel*tc;
+            targetDis = motors[i].coastEndDis + s*t - 0.5*a*tc*tc;
+            targetSpeed = s - a*tc;
         } else if(dis >= motors[i].totalDis) {
             targetDis = motors[i].totalDis;
             targetSpeed = speedMin;
@@ -547,7 +565,7 @@ void IRAM_ATTR timer_1_0_isr(void *para) {
 
         //limit speed
         if(motors[i].speed > 1.1*targetSpeed) motors[i].speed = 1.1*targetSpeed;
-        if(motors[i].speed > speedLimit[i]) motors[i].speed = speedLimit[i];
+        if(motors[i].speed > 1.1*motors[i].speedMax) motors[i].speed = 1.1*motors[i].speedMax;
         if(motors[i].speed < speedMin) motors[i].speed = speedMin;
 
         // deg/s*step/deg -> step/s step/s*s/interval -> step/interval
