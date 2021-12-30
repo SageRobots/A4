@@ -124,7 +124,8 @@ float kp = 0.8;
 //j1 = 216.2 all the way back, set to 45
 //j2 = 28.6 straight up, set to 180
 //j3 = 257.7 straight out, set to 90
-const float offset[4] = {270-242.3, 45-33, 180-28.6, 90-257.7};
+const float offset[4] = {270-242.3, 45-63, 180-28.6, 90-257.7};
+float dx=0, dy=0, dz=0;
 
 static void event_handler(void* arg, esp_event_base_t event_base,
                                 int32_t event_id, void* event_data) {
@@ -225,11 +226,13 @@ static esp_err_t get_handler_2(httpd_req_t *req) {
         snprintf(result, len + 1, "%.2f", battery);
         httpd_resp_sendstr(req, result);
     } else if (!strcmp(req->uri,"/pos")) {
-        int len = snprintf(NULL, 0, "J0: %.2f\t J1: %.2f\t J2: %.2f\t J3: %.2f", 
-            motors[0].currentPos, motors[1].currentPos, motors[2].currentPos, motors[3].currentPos);
+        int len = snprintf(NULL, 0, "J0 %.2f\t J1 %.2f\t J2 %.2f\t J3 %.2f\n X %.1f\n Y %.1f\n Z %.1f", 
+            motors[0].currentPos, motors[1].currentPos, motors[2].currentPos, motors[3].currentPos, 
+            dx, dy, dz);
         char *result = (char *)malloc(len + 1);
-        snprintf(result, len + 1, "J0: %.2f\t J1: %.2f\t J2: %.2f\t J3: %.2f", 
-            motors[0].currentPos, motors[1].currentPos, motors[2].currentPos, motors[3].currentPos);
+        snprintf(result, len + 1, "J0 %.2f\t J1 %.2f\t J2 %.2f\t J3 %.2f X %.1f\n Y %.1f\n Z %.1f", 
+            motors[0].currentPos, motors[1].currentPos, motors[2].currentPos, motors[3].currentPos, 
+            dx, dy, dz);
         httpd_resp_sendstr(req, result);
     } else {
         printf("URI: ");
@@ -685,6 +688,37 @@ static void enc0_task(void *arg) {
     }
 }
 
+void forwardKinematics() {
+    const float degToRad = 3.14159/180.0;
+    float th1, th2, th3, th4;
+    th1 = (motors[0].currentPos-90)*degToRad;
+    th2 = (motors[1].currentPos-190.5)*degToRad;
+    th3 = (motors[2].currentPos-192.9)*degToRad;
+    th4 = (motors[3].currentPos-102)*degToRad;
+    float c1,c2,c3,c4,s1,s2,s3,s4;
+    c1 = cos(th1);
+    c2 = cos(th2);
+    c3 = cos(th3);
+    c4 = cos(th4);
+    s1 = sin(th1);
+    s2 = sin(th2);
+    s3 = sin(th3);
+    s4 = sin(th4);
+
+    dx = 265*c1*c2*c3 + 254*c1*c2 + 265*c1*s2*s3 + 253*c4*c1*(c2*c3 + s2*s3)
+        + 23*s1 + 253*s4*c1*(-c2*s3 + c3*s2);
+
+    dy = -23*c1 + 265*c2*c3*s1 + 254*c2*s1 + 253*c4*s1*(c2*c3 + s2*s3) + 265*s1*s2*s3 
+        + 253*s4*s1*(-c2*s3 + c3*s2);
+
+    dz = 265*c2*s3 - 265*c3*s2 + 253*c4*(c2*s3 - c3*s2) - 254*s2 
+        + 253*s4*(c2*c3 + s2*s3) + 141;
+
+    // wristX = c1*(265*c2*c3 + 254*c2 + 265*s2*s3);
+    // wristY = s1*(265*c2*c3 + 254*c2 + 265*s2*s3);
+    // wristZ = 265*c2*s3 - 265*c3*s2 - 254*s2 + 141;
+}
+
 void app_main(void) {
     //Initialize NVS
     esp_err_t ret = nvs_flash_init();
@@ -763,7 +797,8 @@ void app_main(void) {
 
         // printf("J0 %.1f\t J1 %.1f\t J2 %.1f\t J3 %.1f\n", motors[0].currentPos, motors[1].currentPos, 
         //     motors[2].currentPos, motors[3].currentPos);
-        printf("J0 %.0f\t speed %.1f\n", motors[0].stepInterval, motors[0].speed);
+        forwardKinematics();
+        // printf("J0 %.0f\t speed %.1f\n", motors[0].stepInterval, motors[0].speed);
         vTaskDelay(100 / portTICK_RATE_MS);
     }
 }
