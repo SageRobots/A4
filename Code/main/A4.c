@@ -117,7 +117,7 @@ bool robotEnabled = false;
 volatile float targetSpeed = speedMin;
 volatile float dis = 0;
 const float million = 1000000;
-float kp = 0.8;
+float kp = 0.79;
 
 //offsets
 //j0 = 242.3 facing left, set to 270
@@ -125,7 +125,7 @@ float kp = 0.8;
 //j2 = 28.6 straight up, set to 180
 //j3 = 257.7 straight out, set to 90
 const float offset[4] = {270-242.3, 45-63, 180-28.6, 90-257.7};
-float dx=0, dy=0, dz=0;
+float dx=0, dy=0, dz=0, pitch = 0;
 
 static void event_handler(void* arg, esp_event_base_t event_base,
                                 int32_t event_id, void* event_data) {
@@ -378,6 +378,79 @@ void planMove(float j0, float j1, float j2, float j3) {
     }
 }
 
+void inverseKinematics(float x, float y, float z, float p) {
+    p *= 3.14159/180.0;
+    //theta 1 angle of j0
+    float th1 = atan2(y, x);
+
+    //theta 3 angle of j2
+    float d1 = 141;
+    float px = x - 253*cos(p)*cos(th1);
+    float py = y - 253*cos(p)*sin(th1);
+    float pz = z - 253*sin(p);
+    float a2 = 254;
+    float a3 = 265;
+    float D = (px*px + py*py + (pz-d1)*(pz-d1) - a2*a2 - a3*a3) / (2*a2*a3);
+    float th3 = atan2(-sqrt(1-D*D), D);
+
+    //theta 2 angle of j1
+    float c3 = cos(th3);
+    float s3 = sin(th3);
+    float th2 = atan2(pz-d1, sqrt(px*px + py*py)) - atan2(a3*s3, a2 + a2*c3);
+
+    //theta 4 angle of j3
+    float th4 = p - th2 - th3;
+
+    th1 *= 180.0/3.14159;
+    th2 *= 180.0/3.14159;
+    th3 *= 180.0/3.14159;
+    th4 *= 180.0/3.14159;
+    printf("th1 %.1f\t th2 %.1f\t th3 %.1f\t th4 %.1f\n", th1, th2, th3, th4);
+    th1 += 90; //actual command
+    th2 = 190.5 - th2;
+    th3 += 192.9;
+    th4 += 102;
+    printf("j0 %.1f\t j1 %.1f\t j2 %.1f\t j3 %.1f\n", th1, th2, th3, th4);
+}
+
+static esp_err_t getHandlerMoveX(httpd_req_t *req) {
+    char*  buf;
+    size_t buf_len;
+    float x = dx;
+    float y = dy;
+    float z = dz;
+    float p = pitch;
+    /* Read URL query string length and allocate memory for length + 1,
+    * extra byte for null termination */
+    buf_len = httpd_req_get_url_query_len(req) + 1;
+    if (buf_len > 1) {
+        buf = malloc(buf_len);
+        if (httpd_req_get_url_query_str(req, buf, buf_len) == ESP_OK) {
+            char param[32];
+            /* Get value of expected key from query string */
+            if (httpd_query_key_value(buf, "x", param, sizeof(param)) == ESP_OK) {
+                ESP_LOGI(TAG, "Found URL query parameter => x=%s", param);
+                x = atof(param);
+            }
+            if (httpd_query_key_value(buf, "y", param, sizeof(param)) == ESP_OK) {
+                ESP_LOGI(TAG, "Found URL query parameter => y=%s", param);
+                y = atof(param);
+            }
+            if (httpd_query_key_value(buf, "z", param, sizeof(param)) == ESP_OK) {
+                ESP_LOGI(TAG, "Found URL query parameter => z=%s", param);
+                z = atof(param);
+            }
+            if (httpd_query_key_value(buf, "p", param, sizeof(param)) == ESP_OK) {
+                ESP_LOGI(TAG, "Found URL query parameter => p=%s", param);
+                p = atof(param);
+            }
+            inverseKinematics(x,y,z,p);
+        }
+        free(buf);
+    }
+    return ESP_OK;
+}
+
 static esp_err_t get_handler_move(httpd_req_t *req) {
     char*  buf;
     size_t buf_len;
@@ -428,12 +501,19 @@ static httpd_handle_t start_webserver(void) {
     ESP_LOGI(TAG, "Starting server on port: '%d'", config.server_port);
     if (httpd_start(&server, &config) == ESP_OK) {
         httpd_uri_t move_uri = {
-            .uri       = "/moveRelative*",  // Match all URIs of type /path/to/file
+            .uri       = "/moveJ*",
             .method    = HTTP_GET,
             .handler   = get_handler_move,
-            .user_ctx  = NULL   // Pass server data as context
+            .user_ctx  = NULL
         };
         httpd_register_uri_handler(server, &move_uri);
+        httpd_uri_t moveX_uri = {
+            .uri       = "/moveX*",
+            .method    = HTTP_GET,
+            .handler   = getHandlerMoveX,
+            .user_ctx  = NULL
+        };
+        httpd_register_uri_handler(server, &moveX_uri);
         httpd_uri_t get_uri_1 = {
             .uri       = "/",
             .method    = HTTP_GET,
@@ -441,12 +521,11 @@ static httpd_handle_t start_webserver(void) {
             .user_ctx  = NULL
         };
         httpd_register_uri_handler(server, &get_uri_1);
-        /* URI handler for getting uploaded files */
         httpd_uri_t file_download = {
-            .uri       = "/*",  // Match all URIs of type /path/to/file
+            .uri       = "/*",
             .method    = HTTP_GET,
             .handler   = get_handler_2,
-            .user_ctx  = NULL   // Pass server data as context
+            .user_ctx  = NULL
         };
         httpd_register_uri_handler(server, &file_download);
         return server;
@@ -706,9 +785,9 @@ void forwardKinematics() {
     s4 = sin(th4);
 
     dx = 265*c1*c2*c3 + 254*c1*c2 + 265*c1*s2*s3 + 253*c4*c1*(c2*c3 + s2*s3)
-        + 23*s1 + 253*s4*c1*(-c2*s3 + c3*s2);
+        + 253*s4*c1*(-c2*s3 + c3*s2);
 
-    dy = -23*c1 + 265*c2*c3*s1 + 254*c2*s1 + 253*c4*s1*(c2*c3 + s2*s3) + 265*s1*s2*s3 
+    dy = 265*c2*c3*s1 + 254*c2*s1 + 253*c4*s1*(c2*c3 + s2*s3) + 265*s1*s2*s3 
         + 253*s4*s1*(-c2*s3 + c3*s2);
 
     dz = 265*c2*s3 - 265*c3*s2 + 253*c4*(c2*s3 - c3*s2) - 254*s2 
@@ -799,6 +878,6 @@ void app_main(void) {
         //     motors[2].currentPos, motors[3].currentPos);
         forwardKinematics();
         // printf("J0 %.0f\t speed %.1f\n", motors[0].stepInterval, motors[0].speed);
-        vTaskDelay(100 / portTICK_RATE_MS);
+        vTaskDelay(1000 / portTICK_RATE_MS);
     }
 }

@@ -7,9 +7,13 @@
 </head>
 <body>
 	<h1>A4 Controls</h1>
-	<label for="inp-move-relative">Vector:</label>
-  <input type="text" id="inp-move-relative" name="inp-move-relative"><br>
-	<button type="button" id="btn-move-relative">Move</button>
+	<label for="inp-move-j">Move Joints:</label>
+  <input type="text" id="inp-move-j" name="inp-move-j">
+	<button type="button" id="btn-move-j">Move J</button>
+
+	<label for="inp-move-x">Move XYZ:</label>
+	<input type="text" id="inp-move-x" name="inp-move-x">
+	<button type="button" id="btn-move-x">Move X</button>
 
 	<p id="p1"></p>
 	<p id="p-battery"></p>
@@ -19,20 +23,32 @@
 
 <script>
 	var p1 = document.getElementById("p1");
-	var btnMoveRelative = document.getElementById('btn-move-relative');
+	var btnMoveJ = document.getElementById('btn-move-j');
+	var btnMoveX = document.getElementById('btn-move-x');
 	var xhttp = new XMLHttpRequest();
   var xhttpBattery = new XMLHttpRequest();
   var xhttpPos = new XMLHttpRequest();
-  var xhttpMoveRelative = new XMLHttpRequest();
+  var xhttpMoveJ = new XMLHttpRequest();
+  var xhttpMoveX = new XMLHttpRequest();
 
-	btnMoveRelative.onclick = function() {
+	btnMoveJ.onclick = function() {
 		//parse the three values
-		var getQuery = 'moveRelative?'
-		var raw = document.getElementById('inp-move-relative').value;
+		var getQuery = 'moveJ?'
+		var raw = document.getElementById('inp-move-j').value;
 		getQuery += raw;
 		console.log("getQuery: " + getQuery);
-		xhttpMoveRelative.open('GET', getQuery, true);
-		xhttpMoveRelative.send();
+		xhttpMoveJ.open('GET', getQuery, true);
+		xhttpMoveJ.send();
+	};
+
+	btnMoveX.onclick = function() {
+		//parse the three values
+		var getQuery = 'moveX?'
+		var raw = document.getElementById('inp-move-x').value;
+		getQuery += raw;
+		console.log("getQuery: " + getQuery);
+		xhttpMoveX.open('GET', getQuery, true);
+		xhttpMoveX.send();
 	};
 
 	//request battery periodically
