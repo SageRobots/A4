@@ -81,6 +81,19 @@ const float speedLimit[4] = {19, 19, 19, 10}; //deg/s
 const float accel = 360.0/27.0; // deg/s2
 const float angleTolerance = 0.3;
 
+struct move {
+    bool ready;
+    float j0;
+    float j1;
+    float j2;
+    float j3;
+    bool complete;
+};
+
+#define bufferMax 49
+struct move moves[bufferMax+1];
+int head=1, tail=0, nextTail = 1;
+
 struct motor {
     float stepsPerDeg;
     float degPerStep;
@@ -104,7 +117,6 @@ struct motor {
     float coastEndDis;
     float coastEndTime;
     float speedMax;
-
 };
 
 volatile bool masterComplete, slaveComplete;
@@ -378,6 +390,29 @@ void planMove(float j0, float j1, float j2, float j3) {
     }
 }
 
+void bufferMove(float j0, float j1, float j2, float j3) {
+    moves[head].j0 = j0;
+    moves[head].j1 = j1;
+    moves[head].j2 = j2;
+    moves[head].j3 = j3;
+    moves[head].complete = false;
+    moves[head].ready = true;
+    if(head < bufferMax) {
+        head++;
+    } else {
+        head = 0;
+    }
+}
+
+int decrementBuffer(int i) {
+    if(i <= 0) {
+        i = bufferMax;
+    } else {
+        i--;
+    }
+    return i;
+}
+
 void inverseKinematics(float x, float y, float z, float p) {
     p *= 3.14159/180.0;
     //theta 1 angle of j0
@@ -411,6 +446,66 @@ void inverseKinematics(float x, float y, float z, float p) {
     th3 += 192.9;
     th4 += 102;
     printf("j0 %.1f\t j1 %.1f\t j2 %.1f\t j3 %.1f\n", th1, th2, th3, th4);
+    if(th1 < 90 || th1 > 270) {
+        printf("th1 out of range\n");
+        return;
+    }
+    if(th2 < 45 || th2 > 190) {
+        printf("th2 out of range\n");
+        return;
+    }
+    if(th3 < 20 || th3 > 180) {
+        printf("th3 out of range\n");
+        return;
+    }
+    if(th4 < 90 || th4 > 265) {
+        printf("th4 out of range\n");
+        nextTail = tail;
+        tail = decrementBuffer(tail);
+        return;
+    }
+
+    //buffer the move
+    bufferMove(th1, th2, th3, th4);
+}
+
+static esp_err_t getHandlerMoveS(httpd_req_t *req) {
+    char*  buf;
+    size_t buf_len;
+    float x = dx;
+    float y = dy;
+    float z = dz;
+    float p = pitch;
+    /* Read URL query string length and allocate memory for length + 1,
+    * extra byte for null termination */
+    buf_len = httpd_req_get_url_query_len(req) + 1;
+    if (buf_len > 1) {
+        buf = malloc(buf_len);
+        if (httpd_req_get_url_query_str(req, buf, buf_len) == ESP_OK) {
+            char param[32];
+            /* Get value of expected key from query string */
+            if (httpd_query_key_value(buf, "x", param, sizeof(param)) == ESP_OK) {
+                ESP_LOGI(TAG, "Found URL query parameter => x=%s", param);
+                x = atof(param);
+            }
+            if (httpd_query_key_value(buf, "y", param, sizeof(param)) == ESP_OK) {
+                ESP_LOGI(TAG, "Found URL query parameter => y=%s", param);
+                y = atof(param);
+            }
+            if (httpd_query_key_value(buf, "z", param, sizeof(param)) == ESP_OK) {
+                ESP_LOGI(TAG, "Found URL query parameter => z=%s", param);
+                z = atof(param);
+            }
+            if (httpd_query_key_value(buf, "p", param, sizeof(param)) == ESP_OK) {
+                ESP_LOGI(TAG, "Found URL query parameter => p=%s", param);
+                p = atof(param);
+            }
+            inverseKinematics(x,y,z,p);
+        }
+        free(buf);
+    }
+    httpd_resp_sendstr(req, "ok");
+    return ESP_OK;
 }
 
 static esp_err_t getHandlerMoveX(httpd_req_t *req) {
@@ -448,6 +543,7 @@ static esp_err_t getHandlerMoveX(httpd_req_t *req) {
         }
         free(buf);
     }
+    httpd_resp_sendstr(req, "ok");
     return ESP_OK;
 }
 
@@ -490,6 +586,7 @@ static esp_err_t get_handler_move(httpd_req_t *req) {
         }
         free(buf);
     }
+    httpd_resp_sendstr(req, "ok");
     return ESP_OK;
 }
 
@@ -514,6 +611,13 @@ static httpd_handle_t start_webserver(void) {
             .user_ctx  = NULL
         };
         httpd_register_uri_handler(server, &moveX_uri);
+        httpd_uri_t moveS_uri = {
+            .uri       = "/moveS*",
+            .method    = HTTP_GET,
+            .handler   = getHandlerMoveS,
+            .user_ctx  = NULL
+        };
+        httpd_register_uri_handler(server, &moveS_uri);
         httpd_uri_t get_uri_1 = {
             .uri       = "/",
             .method    = HTTP_GET,
@@ -842,6 +946,12 @@ void app_main(void) {
     motorInit(2, pinEn2, pinStep2, pinDir2, pinCS2, 26.0+103.0/121.0);
     motorInit(3, pinEn3, pinStep3, pinDir3, pinCS3, 26.0+103.0/121.0);
 
+    for(int i=0; i<=bufferMax; i++) {
+        moves[i].ready = false;
+        moves[i].complete = false;
+    }
+    moves[tail].complete = true;
+
     tg_timer_init(TIMER_GROUP_0, TIMER_0, 1, TIMER_INTERVAL0_S);
     timer_isr_register(TIMER_GROUP_0, TIMER_0, timer_0_0_isr,
        (void *) TIMER_0, ESP_INTR_FLAG_IRAM, NULL);
@@ -878,6 +988,34 @@ void app_main(void) {
         //     motors[2].currentPos, motors[3].currentPos);
         forwardKinematics();
         // printf("J0 %.0f\t speed %.1f\n", motors[0].stepInterval, motors[0].speed);
-        vTaskDelay(1000 / portTICK_RATE_MS);
+
+        //check if move buffer is ready
+        if(moves[tail].complete && moves[nextTail].ready) {
+            if(tail < bufferMax) {
+                tail++;
+            } else {
+                tail = 0;
+            }
+            if(tail < bufferMax) {
+                nextTail = tail+1;
+            } else {
+                nextTail = 0;
+            }
+            planMove(moves[tail].j0, moves[tail].j1, moves[tail].j2, moves[tail].j3);
+        }
+
+        //check if current move is complete
+        if(fabs(moves[tail].j0 - motors[0].currentPos) <= angleTolerance) {
+            if(fabs(moves[tail].j1 - motors[1].currentPos) <= angleTolerance) {
+                if(fabs(moves[tail].j2 - motors[2].currentPos) <= angleTolerance) {
+                    if(fabs(moves[tail].j3 - motors[3].currentPos) <= angleTolerance) {
+                        moves[tail].ready = false;
+                        moves[tail].complete = true;
+                    }
+                }
+            }
+        }
+
+        vTaskDelay(100 / portTICK_RATE_MS);
     }
 }

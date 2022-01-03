@@ -9,11 +9,14 @@
 	<h1>A4 Controls</h1>
 	<label for="inp-move-j">Move Joints:</label>
   <input type="text" id="inp-move-j" name="inp-move-j">
-	<button type="button" id="btn-move-j">Move J</button>
+	<button type="button" id="btn-move-j">Move J</button><br>
 
 	<label for="inp-move-x">Move XYZ:</label>
 	<input type="text" id="inp-move-x" name="inp-move-x">
 	<button type="button" id="btn-move-x">Move X</button>
+
+	<textarea id="txt-script" rows="10" cols="80"></textarea><br>
+	<button type="button" id="btn-script">Run Script</button>
 
 	<p id="p1"></p>
 	<p id="p-battery"></p>
@@ -25,19 +28,34 @@
 	var p1 = document.getElementById("p1");
 	var btnMoveJ = document.getElementById('btn-move-j');
 	var btnMoveX = document.getElementById('btn-move-x');
+	var btnScript = document.getElementById('btn-script');
+	var txtScript = document.getElementById('txt-script');
 	var xhttp = new XMLHttpRequest();
   var xhttpBattery = new XMLHttpRequest();
   var xhttpPos = new XMLHttpRequest();
   var xhttpMoveJ = new XMLHttpRequest();
   var xhttpMoveX = new XMLHttpRequest();
+  var xhttpMove = new XMLHttpRequest();
+
+  btnScript.onclick = function() {
+  	//send each line and wait for response
+  	var getQuery = ''
+  	var text = txtScript.value
+  	var commands = text.split('\n')
+  	for (var i=0; i<commands.length; i++) {
+  		console.log(commands[i])
+  		if(commands[i][0] == '#') continue
+  		xhttpMove.open('GET', 'moveS?' + commands[i], false)
+  		xhttpMove.send()
+  	}
+  }
 
 	btnMoveJ.onclick = function() {
-		//parse the three values
 		var getQuery = 'moveJ?'
 		var raw = document.getElementById('inp-move-j').value;
 		getQuery += raw;
 		console.log("getQuery: " + getQuery);
-		xhttpMoveJ.open('GET', getQuery, true);
+		xhttpMoveJ.open('GET', getQuery, false);
 		xhttpMoveJ.send();
 	};
 
@@ -47,7 +65,7 @@
 		var raw = document.getElementById('inp-move-x').value;
 		getQuery += raw;
 		console.log("getQuery: " + getQuery);
-		xhttpMoveX.open('GET', getQuery, true);
+		xhttpMoveX.open('GET', getQuery, false);
 		xhttpMoveX.send();
 	};
 
